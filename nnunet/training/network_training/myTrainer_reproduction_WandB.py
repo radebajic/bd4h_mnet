@@ -120,7 +120,7 @@ class myTrainer_reproduction(nnUNetTrainer):
         
         # --- W&B init (minimal) ---
         if wandb is not None and os.environ.get("WANDB_DISABLED", "0") not in ("1", "true", "True"):
-            proj = os.environ.get("WANDB_PROJECT", "nnunet")
+            proj = os.environ.get("WANDB_PROJECT", "CSE6250_MNet_Reproduction")
             name = f"{self.__class__.__name__}_task{getattr(self, 'task', 'NA')}_fold{self.fold}"
             cfg = {
                 "trainer": self.__class__.__name__,
