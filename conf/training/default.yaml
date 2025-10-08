@@ -1,0 +1,4 @@
+# conf/training/default.yaml
+# Default training preset used by conf/config.yaml
+max_epochs: 50
+gated_fusion: "spatial"

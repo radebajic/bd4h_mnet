@@ -1,0 +1,7 @@
+name: mnet
+impl: mnet
+width_mult: 1.0
+use_sep3d: false
+use_checkpoint: false
+cat_reduce: false
+gated_fusion: spatial

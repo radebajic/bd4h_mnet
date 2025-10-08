@@ -1,0 +1,9 @@
+name: vmamba
+impl: vmamba
+# add the knobs you need to differ from MNet
+width_mult: 1.0
+use_sep3d: false
+use_checkpoint: false
+cat_reduce: false
+gated_fusion: spatial
+z_blocks: [3,5]    # example arch knob if you need it

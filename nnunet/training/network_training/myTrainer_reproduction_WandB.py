@@ -34,11 +34,20 @@ except Exception:
 
 class myTrainer_reproduction(nnUNetTrainer):
     def __init__(self, plans_file, fold, output_folder=None, dataset_directory=None, batch_dice=True, stage=None,
-                 unpack_data=True, deterministic=True, fp16=False):
+                 unpack_data=True, deterministic=True, fp16=False, hydra_cfg: DictConfig = None):
         super().__init__(plans_file, fold, output_folder, dataset_directory, batch_dice, stage, unpack_data,
                          deterministic, fp16)
-        #TODO update to args
-        self.max_num_epochs = 50 #revert to 50-150
+        
+        # Hydra config with defaults
+        self.hydra_cfg = hydra_cfg
+        if self.hydra_cfg is not None:
+            self.max_num_epochs = self.hydra_cfg.get('max_epochs', 50)
+            self.gated_fusion = self.hydra_cfg.get('gated_fusion', 'spatial')
+        else:
+            # Fallback defaults
+            self.max_num_epochs = 50
+            self.gated_fusion = 'spatial'
+            
         self.initial_lr = 1e-2
         self.deep_supervision_scales = None
         self.ds_loss_weights = None
@@ -55,6 +64,9 @@ class myTrainer_reproduction(nnUNetTrainer):
         
         # WandB
         self._wb_run = None
+        
+        # Log the configuration
+        self.print_to_log_file(f"Training config: max_epochs={self.max_num_epochs}, gated_fusion={self.gated_fusion}")
 
     def initialize(self, training=True, force_load_plans=False):
         if not self.was_initialized:
@@ -131,6 +143,23 @@ class myTrainer_reproduction(nnUNetTrainer):
                 "batch_size": self.batch_size,
                 "initial_lr": self.initial_lr,
                 "max_epochs": self.max_num_epochs,
+                "gated_fusion": self.gated_fusion,
+                "width_mult": self.width_mult,
+                "use_sep3d": self.use_sep3d,
+                "use_checkpoint": self.use_checkpoint,
+                "cat_reduce": self.cat_reduce,
+                "fp16": self.fp16,
+                "deterministic": self.deterministic,
+                "data_aug_params": self.data_aug_params,
+                "ds_loss_weights": self.ds_loss_weights.tolist() if self.ds_loss_weights is not None else None,
+                "deep_supervision_scales": self.deep_supervision_scales,
+                "num_classes": self.num_classes,
+                "num_input_channels": self.num_input_channels,
+                "batch_dice": self.batch_dice,
+                "initial_epoch": self.epoch,
+                "plans_file": self.plans_file,
+                "output_folder": self.output_folder,
+                "dataset_directory": self.dataset_directory,
             }
             self._wb_run = wandb.init(project=proj, name=name, reinit=True, config=cfg)
             try:
@@ -150,7 +179,7 @@ class myTrainer_reproduction(nnUNetTrainer):
             use_sep3d=self.use_sep3d,
             use_checkpoint=self.use_checkpoint,
             cat_reduce=self.cat_reduce,
-            gated_fusion="spatial" # 'channel' | 'spatial' | 'dual' | 'None'
+            gated_fusion=self.gated_fusion  # Now configurable via Hydra
         )
         if torch.cuda.is_available():
             self.network.cuda()

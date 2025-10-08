@@ -1,0 +1,4 @@
+# conf/training/quick.yaml
+# Quick preset for testing
+max_epochs: 5
+gated_fusion: "spatial"

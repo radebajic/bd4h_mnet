@@ -1,0 +1,7 @@
+# configs/config.yaml
+defaults:
+  - training: default
+
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
