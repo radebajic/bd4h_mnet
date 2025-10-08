@@ -32,8 +32,30 @@ def export_for_submission(source_dir, target_dir):
 
 
 if __name__ == "__main__":
-    folder = "/teamspace/studios/this_studio/nnUNet/data/Promise2012" # promise12
-    out_folder = "/teamspace/studios/this_studio/nnUNet_raw/nnUNet_raw_data/Task024_Promise"
+    import os
+    import argparse
+    
+    p = argparse.ArgumentParser()
+    p.add_argument("--folder", help="PROMISE12 source folder", default=None)
+    p.add_argument("--out_folder", help="nnUNet raw out folder", default=None)
+    args = p.parse_args()
+
+    # CLI overrides everything
+    if args.folder and args.out_folder:
+        folder = args.folder
+        out_folder = args.out_folder
+    else:
+        # prefer teamspace paths when they exist, otherwise fallback to workspace paths
+        candidate_folder = "/teamspace/studios/this_studio/nnUNet/data/Promise2012"
+        candidate_out = "/teamspace/studios/this_studio/nnUNet_raw/nnUNet_raw_data/Task024_Promise"
+        if os.path.exists(candidate_folder):
+            folder = candidate_folder
+            out_folder = candidate_out
+        else:
+            folder = "/workspaces/bd4h_mnet/data/PROMISE12"
+            out_folder = "/workspaces/bd4h_mnet/nnUNet_raw_data_base/nnUNet_raw_data/Task024_Promise"
+    
+
 
     maybe_mkdir_p(join(out_folder, "imagesTr"))
     maybe_mkdir_p(join(out_folder, "imagesTs"))

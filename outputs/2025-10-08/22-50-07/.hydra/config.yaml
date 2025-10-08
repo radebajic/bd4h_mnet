@@ -1,0 +1,3 @@
+training:
+  max_epochs: 1
+  gated_fusion: spatial

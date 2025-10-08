@@ -1,0 +1,2 @@
+source: ${myroot}/data/PROMISE12
+target: ${nnUNet_raw_data_base}/nnUNet_raw_data/Task024_Promise

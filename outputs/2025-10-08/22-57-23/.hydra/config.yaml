@@ -1,0 +1,8 @@
+training:
+  fold: 1
+  plans_file: nnUNetPlansv2.1_trgSp_z2.2_yx0.6125
+  dataset_directory: Task024_Promise
+  max_epochs: 1
+  gated_fusion: spatial
+  validation_only: false
+  npz: false

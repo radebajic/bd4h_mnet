@@ -3,6 +3,7 @@ import torch
 from typing import Tuple
 from collections import OrderedDict
 import torch.backends.cudnn as cudnn
+from omegaconf import DictConfig
 
 from nnunet.training.data_augmentation.data_augmentation_moreDA import get_moreDA_augmentation
 from nnunet.training.loss_functions.deep_supervision import MultipleOutputLoss2

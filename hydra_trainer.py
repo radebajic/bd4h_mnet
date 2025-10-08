@@ -1,11 +1,12 @@
 import hydra
 from omegaconf import DictConfig
-from nnunet.training.network_training.myTrainer_reproduction_wandb import myTrainer_reproduction
+from nnunet.training.network_training.myTrainer_reproduction_WandB import myTrainer_reproduction
 import os
 from pathlib import Path
 
 # Project-local nnU-Net paths (adjust if you want other locations)
 _proj_root = Path(__file__).resolve().parent
+os.environ.setdefault("myroot", os.path.join(_proj_root))
 os.environ.setdefault("nnUNet_raw_data_base",
                       os.path.join(_proj_root, "nnUNet_raw"))
 os.environ.setdefault("nnUNet_preprocessed", os.path.join(
