@@ -4,7 +4,6 @@ hydra:
   job:
     chdir: false
     env_set:
-      WANDB_API_KEY: "c703f9b55ebee0c8dde109b1a4a2cc07d9865d8a"        # or use ${oc.env:WANDB_API_KEY,}
       WANDB_ENTITY: "xplstm"      # optional
       WANDB_PROJECT: "CSE6250_MNet_Reproduction"    # optional
 

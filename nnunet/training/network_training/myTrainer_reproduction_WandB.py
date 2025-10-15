@@ -153,10 +153,16 @@ class myTrainer_reproduction_WandB(nnUNetTrainer):
 
         self.was_initialized = True
         
+         # init counters for logging
+        self._global_step = 0
+        self._epoch_loss_sum = 0.0
+        self._epoch_loss_cnt = 0
+        self._ema_loss = None 
+        
         # --- W&B init (minimal) ---
         if getattr(self, "wandb_enabled", False) and wandb is not None:
             try:
-                api_key = os.environ.get("WANDB_API_KEY")  # fix: read correct env var
+                api_key = os.environ.get("WANDB_API_KEY")
                 if api_key:
                     try:
                         wandb.login(key=api_key, relogin=False)
@@ -164,45 +170,40 @@ class myTrainer_reproduction_WandB(nnUNetTrainer):
                         pass
                 proj = self.wandb_project or os.environ.get("WANDB_PROJECT", "CSE6250_MNet_Reproduction")
                 name = self.wandb_run_name or f"{self.__class__.__name__}_task{getattr(self, 'task', 'NA')}_fold{self.fold}"
-                # basic config; detailed config can be updated later
-                self._wb_run = wandb.init(project=proj, name=name, reinit=True, config={})
-                try:
-                    self._wb_run.watch(self.network, log_freq=100)
-                except Exception:
-                    pass
-            except Exception as e:
-                self.print_to_log_file(f"W&B init skipped: {e}")
                 cfg = {
                     "trainer": self.__class__.__name__,
                     "task": getattr(self, "task", None),
                     "fold": self.fold,
                     "plans": self.plans.get('plans_name', 'unknown') if isinstance(self.plans, dict) else "unknown",
-                    "patch_size": getattr(self, "patch_size", None),
-                    "batch_size": self.batch_size,
-                    "initial_lr": self.initial_lr,
-                    "max_epochs": self.max_num_epochs,
-                    "gated_fusion": self.gated_fusion,
-                    "width_mult": self.width_mult,
-                    "use_sep3d": self.use_sep3d,
-                    "use_checkpoint": self.use_checkpoint,
-                    "cat_reduce": self.cat_reduce,
-                    "fp16": self.fp16,
-                    "deterministic": self.deterministic,
-                    "ds_loss_weights": self.ds_loss_weights.tolist() if self.ds_loss_weights is not None else None,
-                    "deep_supervision_scales": self.deep_supervision_scales,
-                    "num_classes": self.num_classes,
-                    "num_input_channels": self.num_input_channels,
                     "batch_dice": self.batch_dice,
+                    "initial_epoch": self.epoch,
                     "plans_file": self.plans_file,
                     "output_folder": self.output_folder,
                     "dataset_directory": self.dataset_directory,
                 }
                 self._wb_run = wandb.init(project=proj, name=name, reinit=True, config=cfg)
+
+                # define per-metric step mapping to avoid step conflicts
+                try:
+                    wandb.define_metric("global_step")
+                    wandb.define_metric("epoch")
+
+                    wandb.define_metric("loss/iter", step_metric="global_step")
+                    wandb.define_metric("loss/iter_ema", step_metric="global_step")
+
+                    wandb.define_metric("loss/epoch_mean", step_metric="epoch")
+                    wandb.define_metric("loss/train", step_metric="epoch")
+                    wandb.define_metric("loss/val", step_metric="epoch")
+                    wandb.define_metric("dice/*", step_metric="epoch")
+                except Exception:
+                    pass
+
                 try:
                     self._wb_run.watch(self.network, log_freq=100)
                 except Exception:
                     pass
-            except Exception as e:
+            except Exception:
+                self._wb_run = None
                 self.print_to_log_file(f"W&B init skipped: {e}")
 
 
@@ -339,23 +340,32 @@ class myTrainer_reproduction_WandB(nnUNetTrainer):
             
         loss_val = float(loss.detach().cpu().numpy())
 
-        # update EMA + epoch accumulators
-        self._ema_loss = (self._ema_beta * (self._ema_loss if self._ema_loss is not None else loss_val)
-                          + (1.0 - self._ema_beta) * loss_val)
+        # update running epoch stats
         self._epoch_loss_sum += loss_val
         self._epoch_loss_cnt += 1
+        
+        # update EMA safely
+        beta = 0.98
+        self._ema_loss = loss_val if self._ema_loss is None else (beta * self._ema_loss + (1 - beta) * loss_val)
 
-        # per-iteration logging with a global step (NOT epoch)
+        # keep original online eval accumulator
+        if run_online_evaluation:
+            self.run_online_evaluation(output, target)
+
+        # per-iteration logging with a global step
         self._global_step += 1
         try:
             if wandb is not None and self._wb_run is not None:
-                wandb.log(
-                    {
-                        "loss/iter": loss_val,          # may be negative if it’s Dice-style
-                        "loss/iter_ema": float(self._ema_loss),
-                    },
-                    step=self._global_step,
-                )
+                log_dict = {
+                    "global_step": self._global_step,
+                    "loss/iter": loss_val,
+                }
+                # only include EMA if available
+                if self._ema_loss is not None:
+                    log_dict["loss/iter_ema"] = float(self._ema_loss)
+
+                # since we defined step_metric for loss/iter, keeping step for consistent _step timeline
+                wandb.log(log_dict, step=self._global_step)
         except Exception:
             pass
 
@@ -415,53 +425,44 @@ class myTrainer_reproduction_WandB(nnUNetTrainer):
         epoch_mean = (self._epoch_loss_sum / max(1, self._epoch_loss_cnt))
         self._epoch_loss_sum = 0.0
         self._epoch_loss_cnt = 0
-        
+
         logs = {
-            "epoch": self.epoch,
+            "epoch": int(self.epoch),  # let W&B use this as the step for epoch metrics
             "lr": float(self.optimizer.param_groups[0]["lr"]),
             "loss/epoch_mean": float(epoch_mean),
         }
-        # train/val losses: try trainer arrays first, fallback to logger keys
+
+        # prefer nnU-Net’s tracked losses
         try:
             if hasattr(self, "all_tr_losses") and len(self.all_tr_losses) > 0:
                 logs["loss/train"] = float(self.all_tr_losses[-1])
             if hasattr(self, "all_val_losses") and len(self.all_val_losses) > 0:
                 logs["loss/val"] = float(self.all_val_losses[-1])
-            else:
-                # fallback to known logger keys
-                if hasattr(self, "my_fancy_logger"):
-                    ml = self.my_fancy_logger.my_logger
-                    for k in ("loss", "train_loss"):
-                        if k in ml and len(ml[k]) > 0:
-                            logs["loss/train"] = float(ml[k][-1]); break
-                    if "val_loss" in ml and len(ml["val_loss"]) > 0:
-                        logs["loss/val"] = float(ml["val_loss"][-1])
         except Exception:
             pass
 
-        # Dice from online eval (handles scalar mean and per-class if cached)
+        # Dice from online eval (mean + per-class if cached)
         try:
             if hasattr(self, "all_val_eval_metrics") and len(self.all_val_eval_metrics) > 0:
                 last = self.all_val_eval_metrics[-1]
-                # scalar mean fallback
-                mean_dc = float(getattr(self, "_last_online_eval_dc_mean", last if isinstance(last, (int, float)) else 0.0))
+                mean_dc = float(getattr(self, "_last_online_eval_dc_mean",
+                                        last if isinstance(last, (int, float)) else 0.0))
                 logs["dice/mean"] = mean_dc
                 if hasattr(self, "_last_online_eval_dc_per_class"):
                     for i, d in enumerate(self._last_online_eval_dc_per_class):
                         logs[f"dice/class_{i}"] = float(d)
-                        
         except Exception:
             pass
 
+        # single epoch log (no conflicting step)
         try:
             if wandb is not None and self._wb_run is not None:
-                wandb.log(logs, step=int(self.epoch))
+                wandb.log(logs)  # do not pass `step`; W&B uses define_metric step_metric
         except Exception:
             pass
 
         continue_training = self.epoch < self.max_num_epochs
-        
-        # Finish WandB run at end of training
+
         if not continue_training:
             try:
                 if self._wb_run is not None:
@@ -469,7 +470,7 @@ class myTrainer_reproduction_WandB(nnUNetTrainer):
             except Exception:
                 pass
             self._wb_run = None
-            
+
         if self.epoch == 100 and self.all_val_eval_metrics[-1] == 0:
             self.optimizer.param_groups[0]["momentum"] = 0.95
             self.network.apply(InitWeights_He(1e-2))
