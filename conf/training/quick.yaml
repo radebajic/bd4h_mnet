@@ -1,4 +1,37 @@
 # conf/training/quick.yaml
 # Quick preset for testing
-max_epochs: 5
-gated_fusion: "spatial"
+hydra:
+  job:
+    chdir: false
+    env_set:
+      WANDB_API_KEY: "c703f9b55ebee0c8dde109b1a4a2cc07d9865d8a"        # or use ${oc.env:WANDB_API_KEY,}
+      WANDB_ENTITY: "xplstm"      # optional
+      WANDB_PROJECT: "CSE6250_MNet_Reproduction"    # optional
+
+trainer:
+  model: 3d_fullres
+  trainer_name: myTrainer_reproduction_WandB
+  task: Task024_Promise
+  fold: 0
+  plans_identifier: nnUNetData_plans_v2.1_trgSp_z2p2_yx0p6125
+  save_npz: true
+
+  dataset_directory: /teamspace/studios/this_studio/nnUNet_preprocessed
+  results_base: /teamspace/studios/this_studio/nnUNet_results
+
+  # training knobs
+  fp16: true
+  deterministic: false
+  unpack_data: true
+  max_epochs: 1
+  gated_fusion: spatial
+  width_mult: 1.0
+  use_sep3d: false
+  use_checkpoint: false
+  cat_reduce: false
+
+  # wandb controls
+  wandb:
+    enabled: true
+    project: CSE6250_MNet_Reproduction
+    run_name: mnet_task24_fold0

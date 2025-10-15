@@ -5,6 +5,8 @@ from collections import OrderedDict
 import torch.backends.cudnn as cudnn
 from omegaconf import DictConfig
 
+import numpy as np
+
 from nnunet.training.data_augmentation.data_augmentation_moreDA import get_moreDA_augmentation
 from nnunet.training.loss_functions.deep_supervision import MultipleOutputLoss2
 from nnunet.utilities.to_torch import maybe_to_torch, to_cuda
@@ -33,38 +35,58 @@ try:
 except Exception:
     wandb = None
 
-class myTrainer_reproduction(nnUNetTrainer):
-    def __init__(self, plans_file, fold, output_folder=None, dataset_directory=None, batch_dice=True, stage=None,
-                 unpack_data=True, deterministic=True, fp16=False, hydra_cfg: DictConfig = None):
+class myTrainer_reproduction_WandB(nnUNetTrainer):
+    def __init__(
+        self,
+        plans_file,
+        fold,
+        output_folder=None,
+        dataset_directory=None,
+        batch_dice=True,
+        stage=None,
+        unpack_data=True,
+        deterministic=True,
+        fp16=False,
+        *,
+        max_num_epochs: int = 1,
+        gated_fusion: str = "spatial",
+        width_mult: float = 1.0,
+        use_sep3d: bool = False,
+        use_checkpoint: bool = False,
+        cat_reduce: bool = False,
+    ):
         super().__init__(plans_file, fold, output_folder, dataset_directory, batch_dice, stage, unpack_data,
                          deterministic, fp16)
-        
-        # Hydra config with defaults
-        self.hydra_cfg = hydra_cfg
-        if self.hydra_cfg is not None:
-            self.max_num_epochs = self.hydra_cfg.get('max_epochs', 50)
-            self.gated_fusion = self.hydra_cfg.get('gated_fusion', 'spatial')
-        else:
-            # Fallback defaults
-            self.max_num_epochs = 50
-            self.gated_fusion = 'spatial'
-            
+
+        # Trainer settings from explicit args
+        self.max_num_epochs = max_num_epochs
+        self.gated_fusion = gated_fusion
+
         self.initial_lr = 1e-2
         self.deep_supervision_scales = None
         self.ds_loss_weights = None
         self.pin_memory = True
 
-        # Efficiency toggles (safe defaults)
-        self.width_mult = 1.0
-        self.use_sep3d = False
-        self.use_checkpoint = False
-        self.cat_reduce = False
+        # Efficiency toggles
+        self.width_mult = width_mult
+        self.use_sep3d = use_sep3d
+        self.use_checkpoint = use_checkpoint
+        self.cat_reduce = cat_reduce
+        
+        # W&B defaults (Hydra can override these attributes after construction)
+        self.wandb_enabled: bool = False
+        self.wandb_project: str | None = None
+        self.wandb_run_name: str | None = None
+        self._wb_run = None
+        self._wb_run = None
+        self._global_step = 0              # for per-iteration logging
+        self._ema_loss = None
+        self._ema_beta = 0.98
+        self._epoch_loss_sum = 0.0
+        self._epoch_loss_cnt = 0
 
         # Autotune cuDNN for mostly-fixed patch shapes
         cudnn.benchmark = True
-        
-        # WandB
-        self._wb_run = None
         
         # Log the configuration
         self.print_to_log_file(f"Training config: max_epochs={self.max_num_epochs}, gated_fusion={self.gated_fusion}")
@@ -132,41 +154,56 @@ class myTrainer_reproduction(nnUNetTrainer):
         self.was_initialized = True
         
         # --- W&B init (minimal) ---
-        if wandb is not None and os.environ.get("WANDB_DISABLED", "0") not in ("1", "true", "True"):
-            proj = os.environ.get("WANDB_PROJECT", "CSE6250_MNet_Reproduction")
-            name = f"{self.__class__.__name__}_task{getattr(self, 'task', 'NA')}_fold{self.fold}"
-            cfg = {
-                "trainer": self.__class__.__name__,
-                "task": getattr(self, "task", None),
-                "fold": self.fold,
-                "plans": self.plans.get('plans_name', 'unknown') if isinstance(self.plans, dict) else "unknown",
-                "patch_size": getattr(self, "patch_size", None),
-                "batch_size": self.batch_size,
-                "initial_lr": self.initial_lr,
-                "max_epochs": self.max_num_epochs,
-                "gated_fusion": self.gated_fusion,
-                "width_mult": self.width_mult,
-                "use_sep3d": self.use_sep3d,
-                "use_checkpoint": self.use_checkpoint,
-                "cat_reduce": self.cat_reduce,
-                "fp16": self.fp16,
-                "deterministic": self.deterministic,
-                "data_aug_params": self.data_aug_params,
-                "ds_loss_weights": self.ds_loss_weights.tolist() if self.ds_loss_weights is not None else None,
-                "deep_supervision_scales": self.deep_supervision_scales,
-                "num_classes": self.num_classes,
-                "num_input_channels": self.num_input_channels,
-                "batch_dice": self.batch_dice,
-                "initial_epoch": self.epoch,
-                "plans_file": self.plans_file,
-                "output_folder": self.output_folder,
-                "dataset_directory": self.dataset_directory,
-            }
-            self._wb_run = wandb.init(project=proj, name=name, reinit=True, config=cfg)
+        if getattr(self, "wandb_enabled", False) and wandb is not None:
             try:
-                self._wb_run.watch(self.network, log_freq=100)  # optional
-            except Exception:
-                pass
+                api_key = os.environ.get("WANDB_API_KEY")  # fix: read correct env var
+                if api_key:
+                    try:
+                        wandb.login(key=api_key, relogin=False)
+                    except Exception:
+                        pass
+                proj = self.wandb_project or os.environ.get("WANDB_PROJECT", "CSE6250_MNet_Reproduction")
+                name = self.wandb_run_name or f"{self.__class__.__name__}_task{getattr(self, 'task', 'NA')}_fold{self.fold}"
+                # basic config; detailed config can be updated later
+                self._wb_run = wandb.init(project=proj, name=name, reinit=True, config={})
+                try:
+                    self._wb_run.watch(self.network, log_freq=100)
+                except Exception:
+                    pass
+            except Exception as e:
+                self.print_to_log_file(f"W&B init skipped: {e}")
+                cfg = {
+                    "trainer": self.__class__.__name__,
+                    "task": getattr(self, "task", None),
+                    "fold": self.fold,
+                    "plans": self.plans.get('plans_name', 'unknown') if isinstance(self.plans, dict) else "unknown",
+                    "patch_size": getattr(self, "patch_size", None),
+                    "batch_size": self.batch_size,
+                    "initial_lr": self.initial_lr,
+                    "max_epochs": self.max_num_epochs,
+                    "gated_fusion": self.gated_fusion,
+                    "width_mult": self.width_mult,
+                    "use_sep3d": self.use_sep3d,
+                    "use_checkpoint": self.use_checkpoint,
+                    "cat_reduce": self.cat_reduce,
+                    "fp16": self.fp16,
+                    "deterministic": self.deterministic,
+                    "ds_loss_weights": self.ds_loss_weights.tolist() if self.ds_loss_weights is not None else None,
+                    "deep_supervision_scales": self.deep_supervision_scales,
+                    "num_classes": self.num_classes,
+                    "num_input_channels": self.num_input_channels,
+                    "batch_dice": self.batch_dice,
+                    "plans_file": self.plans_file,
+                    "output_folder": self.output_folder,
+                    "dataset_directory": self.dataset_directory,
+                }
+                self._wb_run = wandb.init(project=proj, name=name, reinit=True, config=cfg)
+                try:
+                    self._wb_run.watch(self.network, log_freq=100)
+                except Exception:
+                    pass
+            except Exception as e:
+                self.print_to_log_file(f"W&B init skipped: {e}")
 
 
     def initialize_network(self):
@@ -222,6 +259,30 @@ class myTrainer_reproduction(nnUNetTrainer):
                                overwrite, validation_folder_name, debug, all_in_gpu,
                                segmentation_export_kwargs, run_postprocessing_on_folds)
         self.network.do_ds = ds
+        # log validation dice immediately if available
+        try:
+            if wandb is not None and self._wb_run is not None:
+                logs = {}
+                last = self.all_val_eval_metrics[-1] if getattr(self, "all_val_eval_metrics", None) else ret
+                if isinstance(last, dict):
+                    if 'mean' in last:
+                        logs["dice/mean"] = float(last['mean'])
+                    if 'all_dices' in last and last['all_dices'] is not None:
+                        for i, d in enumerate(last['all_dices']):
+                            logs[f"dice/class_{i}"] = float(d)
+                elif isinstance(last, (list, tuple)) and len(last) > 0:
+                    # common tuple: (mean, per_class, ...) or list
+                    try:
+                        logs["dice/mean"] = float(last[0])
+                    except Exception:
+                        pass
+                    if len(last) > 1 and isinstance(last[1], (list, tuple, np.ndarray)):
+                        for i, d in enumerate(last[1]):
+                            logs[f"dice/class_{i}"] = float(d)
+                if logs:
+                    wandb.log(logs, step=self.epoch)
+        except Exception:
+            pass
         return ret
 
     def predict_preprocessed_data_return_seg_and_softmax(self, data: np.ndarray, do_mirroring: bool = True,
@@ -275,6 +336,28 @@ class myTrainer_reproduction(nnUNetTrainer):
 
         if run_online_evaluation:
             self.run_online_evaluation(output, target)
+            
+        loss_val = float(loss.detach().cpu().numpy())
+
+        # update EMA + epoch accumulators
+        self._ema_loss = (self._ema_beta * (self._ema_loss if self._ema_loss is not None else loss_val)
+                          + (1.0 - self._ema_beta) * loss_val)
+        self._epoch_loss_sum += loss_val
+        self._epoch_loss_cnt += 1
+
+        # per-iteration logging with a global step (NOT epoch)
+        self._global_step += 1
+        try:
+            if wandb is not None and self._wb_run is not None:
+                wandb.log(
+                    {
+                        "loss/iter": loss_val,          # may be negative if it’s Dice-style
+                        "loss/iter_ema": float(self._ema_loss),
+                    },
+                    step=self._global_step,
+                )
+        except Exception:
+            pass
 
         del target
         return loss.detach().cpu().numpy()
@@ -327,34 +410,55 @@ class myTrainer_reproduction(nnUNetTrainer):
 
     def on_epoch_end(self):
         super().on_epoch_end()
+        
+        # epoch mean loss
+        epoch_mean = (self._epoch_loss_sum / max(1, self._epoch_loss_cnt))
+        self._epoch_loss_sum = 0.0
+        self._epoch_loss_cnt = 0
+        
         logs = {
             "epoch": self.epoch,
             "lr": float(self.optimizer.param_groups[0]["lr"]),
-            }
-        # last train/val losses if nnU-Net logger has them
+            "loss/epoch_mean": float(epoch_mean),
+        }
+        # train/val losses: try trainer arrays first, fallback to logger keys
         try:
-            if len(self.my_fancy_logger.my_logger['train_loss']) > 0:
-                logs["loss/train"] = float(self.my_fancy_logger.my_logger['train_loss'][-1])
-            if len(self.my_fancy_logger.my_logger['val_loss']) > 0:
-                logs["loss/val"] = float(self.my_fancy_logger.my_logger['val_loss'][-1])
+            if hasattr(self, "all_tr_losses") and len(self.all_tr_losses) > 0:
+                logs["loss/train"] = float(self.all_tr_losses[-1])
+            if hasattr(self, "all_val_losses") and len(self.all_val_losses) > 0:
+                logs["loss/val"] = float(self.all_val_losses[-1])
+            else:
+                # fallback to known logger keys
+                if hasattr(self, "my_fancy_logger"):
+                    ml = self.my_fancy_logger.my_logger
+                    for k in ("loss", "train_loss"):
+                        if k in ml and len(ml[k]) > 0:
+                            logs["loss/train"] = float(ml[k][-1]); break
+                    if "val_loss" in ml and len(ml["val_loss"]) > 0:
+                        logs["loss/val"] = float(ml["val_loss"][-1])
         except Exception:
             pass
 
-        # Dice (mean + per class) if validation ran
+        # Dice from online eval (handles scalar mean and per-class if cached)
         try:
             if hasattr(self, "all_val_eval_metrics") and len(self.all_val_eval_metrics) > 0:
                 last = self.all_val_eval_metrics[-1]
-                if isinstance(last, dict):
-                    if 'mean' in last:
-                        logs["dice/mean"] = float(last['mean'])
-                    if 'all_dices' in last and last['all_dices'] is not None:
-                        for i, d in enumerate(last['all_dices']):
-                            logs[f"dice/class_{i}"] = float(d)
+                # scalar mean fallback
+                mean_dc = float(getattr(self, "_last_online_eval_dc_mean", last if isinstance(last, (int, float)) else 0.0))
+                logs["dice/mean"] = mean_dc
+                if hasattr(self, "_last_online_eval_dc_per_class"):
+                    for i, d in enumerate(self._last_online_eval_dc_per_class):
+                        logs[f"dice/class_{i}"] = float(d)
+                        
         except Exception:
             pass
 
-        if wandb is not None and self._wb_run is not None:
-            wandb.log(logs, step=self.epoch)
+        try:
+            if wandb is not None and self._wb_run is not None:
+                wandb.log(logs, step=int(self.epoch))
+        except Exception:
+            pass
+
         continue_training = self.epoch < self.max_num_epochs
         
         # Finish WandB run at end of training
