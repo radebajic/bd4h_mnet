@@ -438,3 +438,5 @@ nnUNet_preprocessed/Task024_Promise/dataset.json
 nnUNet_raw_data_base/nnUNet_cropped_data/Task024_Promise/dataset.json
 nnUNet_raw_data_base/nnUNet_raw_data/Task024_Promise/dataset.json
 outputs/*
+multirun/*
+wandb/*

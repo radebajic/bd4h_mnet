@@ -1,11 +1,36 @@
 # conf/training/default.yaml
-# Default training preset used by conf/config.yaml
-fold: 1
-plans_file: nnUNetPlansv2nnUNetPlansv2.1_trgSp_z2p2_yx06125
-dataset_directory: "Task024_Promise"
-max_epochs: 1
-gated_fusion: "spatial"
+# Quick preset for testing
+hydra:
+  job:
+    chdir: false
+    env_set:
+      WANDB_ENTITY: "xplstm"      # optional
+      WANDB_PROJECT: "CSE6250_MNet_Reproduction"    # optional
 
+trainer:
+  model: 3d_fullres
+  trainer_name: myTrainer_reproduction_WandB
+  task: Task024_Promise
+  fold: 0
+  plans_identifier: nnUNetData_plans_v2.1_trgSp_z2p2_yx0p6125
+  save_npz: true
 
-validation_only: false
-npz: false
+  dataset_directory: /teamspace/studios/this_studio/nnUNet_preprocessed
+  results_base: /teamspace/studios/this_studio/nnUNet_results
+
+  # training knobs
+  fp16: true
+  deterministic: false
+  unpack_data: true
+  max_epochs: 1
+  gated_fusion: spatial
+  width_mult: 1.0
+  use_sep3d: false
+  use_checkpoint: false
+  cat_reduce: false
+
+  # wandb controls
+  wandb:
+    enabled: true
+    project: CSE6250_MNet_Reproduction
+    run_name: mnet_task24_fold0

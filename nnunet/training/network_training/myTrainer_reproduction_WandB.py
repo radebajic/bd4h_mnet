@@ -28,6 +28,9 @@ from nnunet.training.learning_rate.poly_lr import poly_lr
 from batchgenerators.utilities.file_and_folder_operations import *
 from nnunet.network_architecture.reproduction_mnet.mnet import MNet
 
+from nnunet.network_architecture.reproduction_mnet.mnet import MNet
+
+
 # WandB logging
 import os
 try:
@@ -90,6 +93,56 @@ class myTrainer_reproduction_WandB(nnUNetTrainer):
         
         # Log the configuration
         self.print_to_log_file(f"Training config: max_epochs={self.max_num_epochs}, gated_fusion={self.gated_fusion}")
+    
+    def _wandb_log_architecture(self):
+        if wandb is None or getattr(self, "_wb_run", None) is None or not hasattr(self, "network"):
+            return
+        # collect architecture knobs (from trainer attrs + network)
+        arch_cfg = {
+            "arch/network": self.network.__class__.__name__,
+            "arch/width_mult": getattr(self, "width_mult", None),
+            "arch/gated_fusion": getattr(self, "gated_fusion", None),
+            "arch/use_sep3d": getattr(self, "use_sep3d", None),
+            "arch/use_checkpoint": getattr(self, "use_checkpoint", None),
+            "arch/cat_reduce": getattr(self, "cat_reduce", None),
+            "arch/vmamba/down_stages": list(getattr(self, "vm_down_stages", [])),
+            "arch/vmamba/up_stages": list(getattr(self, "vm_up_stages", [])),
+            "arch/vmamba/bottleneck_stages": list(getattr(self, "vm_bottleneck_stages", [])),
+            "arch/vmamba/axial_reduce": getattr(self, "axial_reduce", None),
+        }
+        # parameter counts
+        try:
+            total_params = sum(p.numel() for p in self.network.parameters())
+            trainable_params = sum(p.numel() for p in self.network.parameters() if p.requires_grad)
+            arch_cfg["arch/params_total_m"] = round(total_params / 1e6, 3)
+            arch_cfg["arch/params_trainable_m"] = round(trainable_params / 1e6, 3)
+        except Exception:
+            pass
+
+        # push to W&B config for filtering
+        try:
+            wandb.config.update(arch_cfg, allow_val_change=True)
+        except Exception:
+            pass
+
+        # also log once as metrics for easy charting
+        try:
+            wandb.log({k: v for k, v in arch_cfg.items() if isinstance(v, (int, float, str))}, step=getattr(self, "epoch", 0))
+        except Exception:
+            pass
+
+        # upload a readable architecture text file
+        try:
+            arch_dir = Path(self.output_folder)
+            arch_dir.mkdir(parents=True, exist_ok=True)
+            arch_txt = arch_dir / "architecture.txt"
+            with open(arch_txt, "w") as f:
+                f.write(str(self.network))
+            art = wandb.Artifact("architecture", type="text")
+            art.add_file(str(arch_txt), name="architecture.txt")
+            self._wb_run.log_artifact(art)
+        except Exception:
+            pass
 
     def initialize(self, training=True, force_load_plans=False):
         if not self.was_initialized:
@@ -202,23 +255,30 @@ class myTrainer_reproduction_WandB(nnUNetTrainer):
                     self._wb_run.watch(self.network, log_freq=100)
                 except Exception:
                     pass
-            except Exception:
+                
+                # NEW: log architecture once
+                self._wandb_log_architecture()
+                
+            except Exception as e:
                 self._wb_run = None
                 self.print_to_log_file(f"W&B init skipped: {e}")
 
 
     def initialize_network(self):
         self.network = MNet(
-            self.num_input_channels, 
-            self.num_classes,
-            kn=(32, 48, 64, 80, 96), 
-            ds=True, 
-            FMU='sub',
-            width_mult=self.width_mult,
-            use_sep3d=self.use_sep3d,
-            use_checkpoint=self.use_checkpoint,
-            cat_reduce=self.cat_reduce,
-            gated_fusion=self.gated_fusion  # Now configurable via Hydra
+            self.num_input_channels, self.num_classes,
+            kn=(32, 48, 64, 80, 96),
+            ds=True, FMU='sub',
+            width_mult=getattr(self, "width_mult", 1.0),
+            use_sep3d=getattr(self, "use_sep3d", False),
+            use_checkpoint=getattr(self, "use_checkpoint", False),
+            cat_reduce=getattr(self, "cat_reduce", False),
+            gated_fusion=getattr(self, "gated_fusion", None),
+            # NEW: pass per-stage switches
+            vm_down_stages=getattr(self, "vm_down_stages", []),
+            vm_up_stages=getattr(self, "vm_up_stages", []),
+            vm_bottleneck_stages=getattr(self, "vm_bottleneck_stages", []),
+            axial_reduce=getattr(self, "axial_reduce", 0.5),
         )
         if torch.cuda.is_available():
             self.network.cuda()
@@ -347,10 +407,6 @@ class myTrainer_reproduction_WandB(nnUNetTrainer):
         # update EMA safely
         beta = 0.98
         self._ema_loss = loss_val if self._ema_loss is None else (beta * self._ema_loss + (1 - beta) * loss_val)
-
-        # keep original online eval accumulator
-        if run_online_evaluation:
-            self.run_online_evaluation(output, target)
 
         # per-iteration logging with a global step
         self._global_step += 1
