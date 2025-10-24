@@ -7,27 +7,30 @@ hydra:
   job:
     chdir: false
     env_set:
-      WANDB_ENTITY: "xplstm"                # optional
-      WANDB_PROJECT: "CSE6250_MNet_Reproduction"   # optional
-      WANDB_GROUP: "mnet_arch_search"
+      WANDB_ENTITY: "xplstm"
+      WANDB_PROJECT: "CSE6250_MNet_Reproduction"
+      WANDB_GROUP: "mnet_arch_search_expanded"
   sweeper:
     _target_: hydra_plugins.hydra_optuna_sweeper.optuna_sweeper.OptunaSweeper
     direction: maximize
     study_name: mnet_arch_search
-    n_trials: 20
+    n_trials: 32
     n_jobs: 1
     sampler:
       _target_: optuna.samplers.TPESampler
       seed: 42
+      n_startup_trials: 8
     params:
-      trainer.vmamba.down_stages: choice([], [2], [3], [2,3])
-      trainer.vmamba.up_stages: choice([], [2])
-      trainer.vmamba.bottleneck_stages: choice([], [2,], [3], [2,3], [5])
-      #trainer.gated_fusion: choice("none", "spatial")
-      #trainer.width_mult: choice(0.75, 1.0)
+      trainer.vmamba.down_stages: choice([], [1], [2], [3], [4], [1,2], [2,3], [3,4], [1,3], [1,2,3])
+      trainer.vmamba.up_stages: choice([], [2], [3], [2,3], [1,2])
+      trainer.vmamba.bottleneck_stages: choice([], [1], [2], [3], [4], [5], [1,2], [2,3], [3,4], [1,3,5])
+      trainer.vmamba.axial_reduce: choice(0.25, 0.5, 0.75, 1.0)
+      trainer.gated_fusion: choice("none", "spatial")
+      trainer.width_mult: choice(0.75, 1.0, 1.25)
+      #trainer.use_sep3d: choice(false, true)
+      #trainer.cat_reduce: choice(false, true)
 
 trainer:
-  # mirrors: nnUNet_train 3d_fullres myTrainer_reproduction_WandB Task024_Promise 0 -p <plans>
   model: 3d_fullres
   trainer_name: myTrainer_reproduction_WandB
   task: Task024_Promise
@@ -35,29 +38,25 @@ trainer:
   plans_identifier: nnUNetData_plans_v2.1_trgSp_z2p2_yx0p6125
   save_npz: true
 
-  # paths
   dataset_directory: /teamspace/studios/this_studio/nnUNet_preprocessed
   results_base: /teamspace/studios/this_studio/nnUNet_results
 
-  # training knobs
   fp16: true
   deterministic: false
   unpack_data: true
   max_epochs: 1
-  gated_fusion: spatial          # will be overridden by sweeper
-  width_mult: 1.0                # will be overridden by sweeper
+  gated_fusion: spatial
+  width_mult: 1.0
   use_sep3d: false
   use_checkpoint: false
   cat_reduce: false
 
-  # VMamba per-stage switches (defaults; sweeper will override)
   vmamba:
     down_stages: []
     up_stages: []
     bottleneck_stages: []
     axial_reduce: 0.5
 
-  # wandb controls
   wandb:
     enabled: true
     project: CSE6250_MNet_Reproduction
