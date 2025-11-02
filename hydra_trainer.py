@@ -5,6 +5,7 @@ from nnunet.run.default_configuration import get_default_configuration
 from nnunet.training.network_training.nnUNetTrainer import nnUNetTrainer
 from nnunet.training.network_training.nnUNetTrainerCascadeFullRes import nnUNetTrainerCascadeFullRes
 from nnunet.training.network_training.nnUNetTrainerV2_CascadeFullRes import nnUNetTrainerV2CascadeFullRes
+from nnunet.run.load_pretrained_weights import load_pretrained_weights
 
 from omegaconf import DictConfig, ListConfig
 from collections.abc import Sequence
@@ -108,7 +109,7 @@ def train(cfg: DictConfig) -> float:
     if isinstance(gf, str) and gf.lower() in ("none", "null", "off", ""):
         gf = None
     if hasattr(trainer, "gated_fusion"):
-        trainer.gated_fusion = gf
+        trainer.gated_fusion = gf  # type: ignore[attr-defined]
 
     # Set other simple knobs if provided
     for k in ("width_mult", "use_sep3d", "use_checkpoint", "cat_reduce"):
@@ -127,31 +128,63 @@ def train(cfg: DictConfig) -> float:
             setattr(trainer, attr, vm.get(name))
 
     # per-stage lists (set UNCONDITIONALLY so sweeps propagate)
-    trainer.vm_down_stages = _as_int_list(vm.get("down_stages", []))
-    trainer.vm_up_stages = _as_int_list(vm.get("up_stages", []))
-    trainer.vm_bottleneck_stages = _as_int_list(vm.get("bottleneck_stages", []))
+    trainer.vm_down_stages = _as_int_list(vm.get("down_stages", []))  # type: ignore[attr-defined]
+    trainer.vm_up_stages = _as_int_list(vm.get("up_stages", []))  # type: ignore[attr-defined]
+    trainer.vm_bottleneck_stages = _as_int_list(vm.get("bottleneck_stages", []))  # type: ignore[attr-defined]
     if hasattr(trainer, "axial_reduce"):
-        trainer.axial_reduce = float(vm.get("axial_reduce", getattr(trainer, "axial_reduce", 0.5)))
+        trainer.axial_reduce = float(vm.get("axial_reduce", getattr(trainer, "axial_reduce", 0.5)))  # type: ignore[attr-defined]
 
     # WandB toggles (consumed by your custom trainer)
     wb = tc.get("wandb", {})
     if hasattr(trainer, "wandb_enabled"):
-        trainer.wandb_enabled = bool(wb.get("enabled", False))
-        trainer.wandb_project = wb.get("project", None)
-        trainer.wandb_run_name = wb.get("run_name", None)
+        trainer.wandb_enabled = bool(wb.get("enabled", False))  # type: ignore[attr-defined]
+        trainer.wandb_project = wb.get("project", None)  # type: ignore[attr-defined]
+        trainer.wandb_run_name = wb.get("run_name", None)  # type: ignore[attr-defined]
 
     # --npz equivalent
     setattr(trainer, "save_npz", bool(tc.get("save_npz", False)))
 
     # Debug to confirm sweep values reach the trainer
     try:
-        print(f"[DEBUG] VMamba down={trainer.vm_down_stages} up={trainer.vm_up_stages} "
-              f"bn={trainer.vm_bottleneck_stages} gf={getattr(trainer,'gated_fusion', None)} "
-              f"width_mult={getattr(trainer,'width_mult', None)}")
+      down = getattr(trainer, "vm_down_stages", None)
+      up = getattr(trainer, "vm_up_stages", None)
+      bottleneck = getattr(trainer, "vm_bottleneck_stages", None)
+      print(f"[DEBUG] VMamba down={down} up={up} bn={bottleneck} "
+          f"gf={getattr(trainer,'gated_fusion', None)} width_mult={getattr(trainer,'width_mult', None)}")
     except Exception:
         pass
 
-    trainer.initialize(training=True)
+    validation_only = bool(tc.get("validation_only", False))
+    continue_training = bool(tc.get("continue_training", False))
+    valbest = bool(tc.get("valbest", False))
+
+    trainer.initialize(training=not validation_only)
+
+    if validation_only:
+        if valbest and hasattr(trainer, "load_best_checkpoint"):
+            trainer.load_best_checkpoint(train=False)
+        else:
+            trainer.load_final_checkpoint(train=False)
+
+        if not bool(tc.get("disable_validation_inference", False)):
+            validation_folder = tc.get("validation_folder", "validation_raw")
+            overwrite = bool(tc.get("val_disable_overwrite", True))
+            run_postprocessing = not bool(tc.get("disable_postprocessing_on_folds", False))
+
+            trainer.validate(
+                save_softmax=bool(tc.get("save_npz", False)),
+                validation_folder_name=validation_folder,
+                overwrite=overwrite,
+                run_postprocessing_on_folds=run_postprocessing,
+            )
+
+        return _extract_best_objective(trainer)
+
+    if continue_training:
+        trainer.load_latest_checkpoint()
+    elif tc.get("pretrained_weights"):
+        load_pretrained_weights(trainer.network, tc.get("pretrained_weights"))
+
     trainer.run_training()
     return _extract_best_objective(trainer)
 

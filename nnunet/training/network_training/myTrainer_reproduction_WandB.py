@@ -378,6 +378,8 @@ class myTrainer_reproduction_WandB(nnUNetTrainer):
                 self.amp_grad_scaler = GradScaler()
             with autocast():
                 output = self.network(data)
+                if not isinstance(output, (list, tuple)):
+                    output = (output,)
                 del data
                 loss = self.loss(output, target)
             if do_backprop:
@@ -388,6 +390,8 @@ class myTrainer_reproduction_WandB(nnUNetTrainer):
                 self.amp_grad_scaler.update()
         else:
             output = self.network(data)
+            if not isinstance(output, (list, tuple)):
+                output = (output,)
             del data
             loss = self.loss(output, target)
             if do_backprop:

@@ -9,21 +9,26 @@ hydra:
     env_set:
       WANDB_ENTITY: "xplstm"
       WANDB_PROJECT: "CSE6250_MNet_Reproduction"
-      WANDB_GROUP: "mnet_arch_search_expanded"
+      WANDB_GROUP: "mnet_arch_search_expanded_8e"
   sweeper:
     _target_: hydra_plugins.hydra_optuna_sweeper.optuna_sweeper.OptunaSweeper
     direction: maximize
-    study_name: mnet_arch_search
+    study_name: mnet_arch_search_2
     n_trials: 32
     n_jobs: 1
     sampler:
       _target_: optuna.samplers.TPESampler
       seed: 42
       n_startup_trials: 8
+    pruner:
+      _target_: optuna.pruners.MedianPruner
+      n_startup_trials: 4
+      n_warmup_steps: 2
+      interval_steps: 1
     params:
-      trainer.vmamba.down_stages: choice([], [1], [2], [3], [4], [1,2], [2,3], [3,4], [1,3], [1,2,3])
-      trainer.vmamba.up_stages: choice([], [2], [3], [2,3], [1,2])
-      trainer.vmamba.bottleneck_stages: choice([], [1], [2], [3], [4], [5], [1,2], [2,3], [3,4], [1,3,5])
+      trainer.vmamba.down_stages: choice([2], [3], [2,3], [3,4])
+      trainer.vmamba.up_stages: choice([2], [3], [2,3], [1,2])
+      trainer.vmamba.bottleneck_stages: choice([3], [4], [5], [3,4], [4,5])
       #trainer.vmamba.axial_reduce: choice(0.25, 0.5, 0.75, 1.0)
       #trainer.gated_fusion: choice("none", "spatial")
       #trainer.width_mult: choice(0.75, 1.0, 1.25)
@@ -36,7 +41,7 @@ trainer:
   task: Task024_Promise
   fold: 0
   plans_identifier: nnUNetData_plans_v2.1_trgSp_z2p2_yx0p6125
-  save_npz: true
+  save_npz: false
 
   dataset_directory: /teamspace/studios/this_studio/nnUNet_preprocessed
   results_base: /teamspace/studios/this_studio/nnUNet_results
@@ -44,7 +49,7 @@ trainer:
   fp16: true
   deterministic: false
   unpack_data: true
-  max_epochs: 1
+  max_epochs: 6
   gated_fusion: spatial
   width_mult: 1.0
   use_sep3d: false
@@ -60,4 +65,4 @@ trainer:
   wandb:
     enabled: true
     project: CSE6250_MNet_Reproduction
-    run_name: mnet_task24_fold0
+    run_name: mnet_task24_fold0_8e

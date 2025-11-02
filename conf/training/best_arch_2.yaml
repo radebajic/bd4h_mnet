@@ -16,6 +16,8 @@ trainer:
   fold: 0
   plans_identifier: nnUNetData_plans_v2.1_trgSp_z2p2_yx0p6125
   save_npz: true
+  validation_only: false
+  valbest: false
 
   # paths
   dataset_directory: /teamspace/studios/this_studio/nnUNet_preprocessed
@@ -25,7 +27,7 @@ trainer:
   fp16: true
   deterministic: false
   unpack_data: true
-  max_epochs: 1
+  max_epochs: 50
   gated_fusion: spatial
   width_mult: 1.0 
   use_sep3d: false
