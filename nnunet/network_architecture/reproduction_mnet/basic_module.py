@@ -104,6 +104,9 @@ class ZScan(nn.Module):
     If Mamba1D is present -> use it; else fall back to separable Conv along Z.
     Input/Output: (N, C, D, H, W)
     """
+    # Class-level flag so other modules can query availability without instantiating
+    use_mamba: bool = Mamba1D is not None
+
     def __init__(self, channels: int, k_fallback: int = 5):
         super().__init__()
         self.use_mamba = False
@@ -123,6 +126,8 @@ class ZScan(nn.Module):
             block = self._build_conv_fallback(channels, k_fallback, fallback_reason)
 
         self.block = block
+        # keep class-level flag in sync with runtime availability
+        type(self).use_mamba = type(self).use_mamba and self.use_mamba
 
     @staticmethod
     def _build_conv_fallback(channels: int, k_fallback: int, reason: Optional[str]) -> nn.Module:
