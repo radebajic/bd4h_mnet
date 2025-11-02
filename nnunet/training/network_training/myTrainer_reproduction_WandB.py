@@ -75,6 +75,12 @@ class myTrainer_reproduction_WandB(nnUNetTrainer):
         self.use_sep3d = use_sep3d
         self.use_checkpoint = use_checkpoint
         self.cat_reduce = cat_reduce
+
+        # VMamba defaults (Hydra may override later)
+        self.vm_down_stages = []
+        self.vm_up_stages = []
+        self.vm_bottleneck_stages = []
+        self.axial_reduce = 0.5
         
         # W&B defaults (Hydra can override these attributes after construction)
         self.wandb_enabled: bool = False

@@ -128,9 +128,20 @@ def train(cfg: DictConfig) -> float:
             setattr(trainer, attr, vm.get(name))
 
     # per-stage lists (set UNCONDITIONALLY so sweeps propagate)
-    trainer.vm_down_stages = _as_int_list(vm.get("down_stages", []))  # type: ignore[attr-defined]
-    trainer.vm_up_stages = _as_int_list(vm.get("up_stages", []))  # type: ignore[attr-defined]
-    trainer.vm_bottleneck_stages = _as_int_list(vm.get("bottleneck_stages", []))  # type: ignore[attr-defined]
+    trainer.vm_down_stages = _as_int_list(vm.get("down_stages", []))
+    trainer.vm_up_stages = _as_int_list(vm.get("up_stages", []))
+    trainer.vm_bottleneck_stages = _as_int_list(vm.get("bottleneck_stages", []))
+
+    def _validate_stage_range(name: str, values: Sequence[int], low: int, high: int) -> None:
+        invalid = [v for v in values if v < low or v > high]
+        if invalid:
+            raise ValueError(
+                f"trainer.vmamba.{name} must be between {low} and {high} inclusive; got invalid entries {invalid}"
+            )
+
+    _validate_stage_range("down_stages", trainer.vm_down_stages, 1, 4)
+    _validate_stage_range("up_stages", trainer.vm_up_stages, 1, 4)
+    _validate_stage_range("bottleneck_stages", trainer.vm_bottleneck_stages, 1, 5)
     if hasattr(trainer, "axial_reduce"):
         trainer.axial_reduce = float(vm.get("axial_reduce", getattr(trainer, "axial_reduce", 0.5)))  # type: ignore[attr-defined]
 

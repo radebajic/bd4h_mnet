@@ -1,5 +1,16 @@
 from torch import nn
 import torch
+import warnings
+from typing import Optional
+
+MAMBA1D_KWARG_CANDIDATES = (
+    {"d_state": 16, "d_conv": 4, "expand": 2},
+    {"d_state": 16, "d_conv": 4, "expand_factor": 2},
+    {"d_state": 16, "d_conv": 4},
+    {},
+)
+
+_MAMBA_FALLBACK_WARNED = False
 
 # optional import for Mamba 1D acceleration
 try:
@@ -95,16 +106,73 @@ class ZScan(nn.Module):
     """
     def __init__(self, channels: int, k_fallback: int = 5):
         super().__init__()
-        self.use_mamba = Mamba1D is not None
-        if self.use_mamba:
-            self.block = Mamba1D(d_model=channels)  # adjust args to your Mamba-1D
+        self.use_mamba = False
+        block: Optional[nn.Module] = None
+        fallback_reason: Optional[str] = None
+
+        if Mamba1D is not None:
+            block = self._try_init_mamba(channels)
+            if block is not None:
+                self.use_mamba = True
+            else:
+                fallback_reason = "failed to initialize Mamba1D"
         else:
-            # depthwise conv only along Z as a lightweight proxy
-            pad = k_fallback // 2
-            self.block = nn.Conv3d(channels, channels, kernel_size=(k_fallback, 1, 1),
-                                   padding=(pad, 0, 0), groups=channels, bias=False)
+            fallback_reason = "mamba-ssm backend unavailable"
+
+        if block is None:
+            block = self._build_conv_fallback(channels, k_fallback, fallback_reason)
+
+        self.block = block
+
+    @staticmethod
+    def _build_conv_fallback(channels: int, k_fallback: int, reason: Optional[str]) -> nn.Module:
+        global _MAMBA_FALLBACK_WARNED
+        if not _MAMBA_FALLBACK_WARNED:
+            detail = reason or "unknown reason"
+            warnings.warn(
+                f"ZScan: using depthwise-conv fallback along Z axis ({detail}).",
+                RuntimeWarning,
+                stacklevel=3,
+            )
+            _MAMBA_FALLBACK_WARNED = True
+
+        pad = k_fallback // 2
+        return nn.Conv3d(
+            channels,
+            channels,
+            kernel_size=(k_fallback, 1, 1),
+            padding=(pad, 0, 0),
+            groups=channels,
+            bias=False,
+        )
+
+    @staticmethod
+    def _try_init_mamba(channels: int) -> Optional[nn.Module]:
+        last_error: Optional[Exception] = None
+        for candidate in MAMBA1D_KWARG_CANDIDATES:
+            try:
+                return Mamba1D(d_model=channels, **candidate)
+            except TypeError as err:
+                last_error = err
+                continue
+            except Exception as err:
+                last_error = err
+                break
+
+        if last_error is not None:
+            warnings.warn(
+                f"ZScan: Mamba1D instantiation failed ({last_error!r}); trying fallback.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
+        return None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if x.dim() != 5:
+            raise ValueError(f"ZScan expects tensors of shape (N, C, D, H, W); got {x.shape!r}")
+        if x.size(2) <= 0:
+            raise ValueError("ZScan received a tensor with zero depth (D dimension).")
+
         if self.use_mamba:
             N, C, D, H, W = x.shape
             x_perm = x.permute(0, 3, 4, 2, 1).contiguous()    # (N,H,W,D,C)

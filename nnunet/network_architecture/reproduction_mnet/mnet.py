@@ -124,6 +124,7 @@ class Down(BasicNet):
                  axial_vmamba: bool = False, axial_reduce: float = 0.5,):
         
         super().__init__()
+        axial_vmamba = axial_vmamba and ZScan.use_mamba  # gate here
         self.mode_in, self.mode_out = mode
         self.downsample = downsample
         self.FMU = FMU
@@ -202,6 +203,7 @@ class Up(BasicNet):
                                   axial_vmamba: bool = False, axial_reduce: float = 0.5):
         
         super().__init__()
+        axial_vmamba = axial_vmamba and ZScan.use_mamba  # gate here
         self.mode_in, self.mode_out = mode
         self.FMU = FMU
         self.cat_reduce = cat_reduce and (FMU == 'cat')
