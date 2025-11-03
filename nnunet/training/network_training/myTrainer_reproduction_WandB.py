@@ -86,6 +86,7 @@ class myTrainer_reproduction_WandB(nnUNetTrainer):
         self.wandb_enabled: bool = False
         self.wandb_project: str | None = None
         self.wandb_run_name: str | None = None
+        self.wandb_group: str | None = None
         self._wb_run = None
         self._wb_run = None
         self._global_step = 0              # for per-iteration logging
@@ -229,6 +230,7 @@ class myTrainer_reproduction_WandB(nnUNetTrainer):
                         pass
                 proj = self.wandb_project or os.environ.get("WANDB_PROJECT", "CSE6250_MNet_Reproduction")
                 name = self.wandb_run_name or f"{self.__class__.__name__}_task{getattr(self, 'task', 'NA')}_fold{self.fold}"
+                group = self.wandb_group or os.environ.get("WANDB_GROUP")
                 cfg = {
                     "trainer": self.__class__.__name__,
                     "task": getattr(self, "task", None),
@@ -240,7 +242,10 @@ class myTrainer_reproduction_WandB(nnUNetTrainer):
                     "output_folder": self.output_folder,
                     "dataset_directory": self.dataset_directory,
                 }
-                self._wb_run = wandb.init(project=proj, name=name, reinit=True, config=cfg)
+                init_kwargs = {"project": proj, "name": name, "reinit": True, "config": cfg}
+                if group is not None:
+                    init_kwargs["group"] = group
+                self._wb_run = wandb.init(**init_kwargs)
 
                 # define per-metric step mapping to avoid step conflicts
                 try:

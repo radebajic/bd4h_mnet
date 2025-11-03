@@ -151,6 +151,8 @@ def train(cfg: DictConfig) -> float:
         trainer.wandb_enabled = bool(wb.get("enabled", False))  # type: ignore[attr-defined]
         trainer.wandb_project = wb.get("project", None)  # type: ignore[attr-defined]
         trainer.wandb_run_name = wb.get("run_name", None)  # type: ignore[attr-defined]
+        if hasattr(trainer, "wandb_group"):
+            trainer.wandb_group = wb.get("group", None)  # type: ignore[attr-defined]
 
     # --npz equivalent
     setattr(trainer, "save_npz", bool(tc.get("save_npz", False)))
