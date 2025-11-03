@@ -1,0 +1,17 @@
+# Validate using the best checkpoint from a previous run
+defaults:
+  - best_arch_3.yaml
+  - _self_
+
+trainer:
+  # override training-specific toggles for validation
+  validation_only: true
+  valbest: true
+  save_npz: false
+  disable_validation_inference: false   # keep inference+Dice logging
+
+  wandb:
+    enabled: true
+    project: CSE6250_MNet_Reproduction
+    run_name: mnet_arch_validation_promise
+    group: mnet_arch_validation

@@ -36,14 +36,14 @@ trainer:
 
   # VMamba 
   vmamba:
-    down_stages: [2,3]
+    down_stages: [3]
     up_stages: [2]
-    bottleneck_stages: [5]
+    bottleneck_stages: [4,5]
     axial_reduce: 0.5
 
   # wandb controls
   wandb:
     enabled: true
     project: CSE6250_MNet_Reproduction
-    run_name: mnet_task24_fold0_bestArch2
-    group: mnet_arch_best_arch_2_50epochs
+    run_name: mnet_task24_fold0_bestArch3
+    group: mnet_arch_best_arch_3_50epochs

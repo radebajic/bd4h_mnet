@@ -1,28 +1,21 @@
 # Quick preset for testing + Optuna sweep
 defaults:
   - override hydra/sweeper: optuna
+  - override hydra/sweeper/sampler: grid
   - _self_
 
 hydra:
   job:
     chdir: false
     env_set:
-      WANDB_ENTITY: "xplstm"
-      WANDB_PROJECT: "CSE6250_MNet_Reproduction"
-      WANDB_GROUP: "mnet_arch_search_expanded_8e"
+      WANDB_ENTITY: "xplstm" 
+      WANDB_PROJECT: "CSE6250_MNet_Reproduction" 
   sweeper:
-    _target_: hydra_plugins.hydra_optuna_sweeper.optuna_sweeper.OptunaSweeper
-    direction: maximize
-    study_name: mnet_arch_search_2
-    n_trials: 32
-    n_jobs: 1
-    sampler:
-      _target_: optuna.samplers.TPESampler
-      seed: 42
-      n_startup_trials: 8
+    study_name: mnet_arch_search_3
+    n_trials: 4
     params:
-      trainer.vmamba.down_stages: choice([2], [3], [2,3], [3,4])
-      #trainer.vmamba.up_stages: choice([2], [3], [2,3], [1,2])
+      #trainer.vmamba.down_stages: choice([2], [3], [2,3], [3,4])
+      trainer.vmamba.up_stages: choice([2], [3], [2,3], [1,2])
       #trainer.vmamba.bottleneck_stages: choice([3], [4], [5], [3,4], [4,5])
       #trainer.vmamba.axial_reduce: choice(0.25, 0.5, 0.75, 1.0)
       #trainer.gated_fusion: choice("none", "spatial")
@@ -61,3 +54,4 @@ trainer:
     enabled: true
     project: CSE6250_MNet_Reproduction
     run_name: mnet_task24_fold0_8e
+    group: mnet_arch_search_expanded_8e_up_stages
