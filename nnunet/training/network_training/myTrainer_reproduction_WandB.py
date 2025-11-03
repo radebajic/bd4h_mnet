@@ -1,11 +1,12 @@
+import contextlib
+import io
+from pathlib import Path
 import numpy as np
 import torch
-from typing import Tuple
+from typing import Optional, Tuple
 from collections import OrderedDict
 import torch.backends.cudnn as cudnn
 from omegaconf import DictConfig
-
-import numpy as np
 
 from nnunet.training.data_augmentation.data_augmentation_moreDA import get_moreDA_augmentation
 from nnunet.training.loss_functions.deep_supervision import MultipleOutputLoss2
@@ -95,6 +96,8 @@ class myTrainer_reproduction_WandB(nnUNetTrainer):
         self._epoch_loss_sum = 0.0
         self._epoch_loss_cnt = 0
 
+        self._baseline_param_count: Optional[int] = None
+
         # Autotune cuDNN for mostly-fixed patch shapes
         cudnn.benchmark = True
         
@@ -118,6 +121,8 @@ class myTrainer_reproduction_WandB(nnUNetTrainer):
             "arch/vmamba/axial_reduce": getattr(self, "axial_reduce", None),
         }
         # parameter counts
+        total_params: Optional[int] = None
+        trainable_params: Optional[int] = None
         try:
             total_params = sum(p.numel() for p in self.network.parameters())
             trainable_params = sum(p.numel() for p in self.network.parameters() if p.requires_grad)
@@ -125,6 +130,38 @@ class myTrainer_reproduction_WandB(nnUNetTrainer):
             arch_cfg["arch/params_trainable_m"] = round(trainable_params / 1e6, 3)
         except Exception:
             pass
+
+        summary = getattr(self.network, "arch_summary", {}) if hasattr(self.network, "arch_summary") else {}
+        backend_available = summary.get("vmamba_backend_available")
+        fallback_used = any(entry.get("backend") == "fallback_conv" for entry in summary.get("stages", []))
+        vmamba_active = any(entry.get("vmamba_enabled") for entry in summary.get("stages", []))
+
+        arch_cfg["arch/vmamba/backend_available"] = backend_available
+        arch_cfg["arch/vmamba/backend_active"] = vmamba_active
+        arch_cfg["arch/vmamba/fallback_used"] = fallback_used
+        if vmamba_active:
+            if backend_available and not fallback_used:
+                arch_cfg["arch/vmamba/backend_mode"] = "mamba"
+            elif fallback_used:
+                arch_cfg["arch/vmamba/backend_mode"] = "fallback"
+            else:
+                arch_cfg["arch/vmamba/backend_mode"] = "disabled"
+        else:
+            arch_cfg["arch/vmamba/backend_mode"] = "inactive"
+
+        baseline_params = self._get_baseline_param_count()
+        if baseline_params and total_params:
+            baseline_m = round(baseline_params / 1e6, 3)
+            delta = total_params - baseline_params
+            delta_m = round(delta / 1e6, 3)
+            delta_pct = round((delta / baseline_params) * 100, 3)
+            arch_cfg["arch/params_baseline_m"] = baseline_m
+            arch_cfg["arch/params_delta_m"] = delta_m
+            arch_cfg["arch/params_delta_pct"] = delta_pct
+            if delta_pct < -1.0:
+                self.print_to_log_file(
+                    f"[WARN] Parameter count decreased {delta_pct:.2f}% vs baseline ({baseline_m}M)."
+                )
 
         # push to W&B config for filtering
         try:
@@ -150,6 +187,43 @@ class myTrainer_reproduction_WandB(nnUNetTrainer):
             self._wb_run.log_artifact(art)
         except Exception:
             pass
+
+    def _get_baseline_param_count(self) -> Optional[int]:
+        if self._baseline_param_count is not None:
+            return self._baseline_param_count
+
+        baseline_net = None
+        try:
+            axial_reduce = getattr(self, "axial_reduce", 0.5)
+            with torch.no_grad():
+                buffer = io.StringIO()
+                with contextlib.redirect_stdout(buffer):
+                    baseline_net = MNet(
+                        self.num_input_channels,
+                        self.num_classes,
+                        kn=(32, 48, 64, 80, 96),
+                        ds=True,
+                        FMU='sub',
+                        width_mult=getattr(self, "width_mult", 1.0),
+                        use_sep3d=getattr(self, "use_sep3d", False),
+                        use_checkpoint=getattr(self, "use_checkpoint", False),
+                        cat_reduce=getattr(self, "cat_reduce", False),
+                        gated_fusion=getattr(self, "gated_fusion", None),
+                        vm_down_stages=[],
+                        vm_up_stages=[],
+                        vm_bottleneck_stages=[],
+                        axial_reduce=axial_reduce,
+                    )
+                params = sum(p.numel() for p in baseline_net.parameters())
+            self._baseline_param_count = params
+        except Exception as exc:
+            self.print_to_log_file(f"Baseline param count computation failed: {exc}")
+            self._baseline_param_count = None
+        finally:
+            if baseline_net is not None:
+                del baseline_net
+
+        return self._baseline_param_count
 
     def initialize(self, training=True, force_load_plans=False):
         if not self.was_initialized:
@@ -298,6 +372,12 @@ class myTrainer_reproduction_WandB(nnUNetTrainer):
         total_params = sum(p.numel() for p in self.network.parameters())
         trainable_params = sum(p.numel() for p in self.network.parameters() if p.requires_grad)
         self.print_to_log_file(f"Model params: total={total_params:,}, trainable={trainable_params:,}")
+
+        if hasattr(self.network, "save_arch_summary"):
+            try:
+                self.network.save_arch_summary(self.output_folder)
+            except Exception as exc:
+                self.print_to_log_file(f"Arch summary save failed: {exc}")
 
 
         # # Optional PyTorch 2 compile (safe guard)

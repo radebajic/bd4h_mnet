@@ -1,10 +1,12 @@
+import json
+import os
 from torch import nn
 import torch
 import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
 from nnunet.network_architecture.neural_network import SegmentationNetwork
 from nnunet.network_architecture.reproduction_mnet.basic_module import CB3d, CB3dSeparable, BasicNet, CBzMamba, ZScan
-from typing import Iterable, Optional, Set
+from typing import Any, Dict, Iterable, List, Optional, Set
 
 
 # ------------------------
@@ -437,6 +439,9 @@ class MNet(SegmentationNetwork):
 
         self.inference_apply_nonlin = None
 
+        self.arch_summary = self._build_arch_summary()
+        self._print_arch_summary()
+
     @property
     def deep_supervision(self):
         return self._deep_supervision
@@ -485,6 +490,109 @@ class MNet(SegmentationNetwork):
             return tuple(self.outputs[i](features[i]) for i in range(7))
         else:
             return self.outputs[0](up14[0] + up14[1])
+
+    @staticmethod
+    def _describe_cb3d_block(block: Optional[nn.Module]) -> Dict[str, Any]:
+        entry: Dict[str, Any] = {}
+        if block is None:
+            entry.update({"impl": "N/A", "vmamba_enabled": False})
+            return entry
+
+        if isinstance(block, CBzMamba):
+            entry["impl"] = "CBzMamba"
+            entry["vmamba_enabled"] = True
+            entry["backend"] = "mamba" if getattr(block.zssm, "use_mamba", False) else "fallback_conv"
+        elif isinstance(block, CB3dSeparable):
+            entry["impl"] = "CB3dSeparable"
+            entry["vmamba_enabled"] = False
+        elif isinstance(block, CB3d):
+            entry["impl"] = "CB3d"
+            entry["vmamba_enabled"] = False
+        else:
+            entry["impl"] = block.__class__.__name__
+            entry["vmamba_enabled"] = False
+
+        return entry
+
+    def _build_arch_summary(self) -> Dict[str, Any]:
+        specs: List[tuple[str, str, int]] = [
+            ("down11", "encoder", 1),
+            ("down12", "encoder", 1),
+            ("down13", "encoder", 1),
+            ("down14", "encoder", 1),
+            ("bottleneck1", "bottleneck", 1),
+            ("down21", "encoder", 2),
+            ("down22", "encoder", 2),
+            ("down23", "encoder", 2),
+            ("bottleneck2", "bottleneck", 2),
+            ("down31", "encoder", 3),
+            ("down32", "encoder", 3),
+            ("bottleneck3", "bottleneck", 3),
+            ("down41", "encoder", 4),
+            ("bottleneck4", "bottleneck", 4),
+            ("bottleneck5", "bottleneck", 5),
+            ("up41", "decoder", 4),
+            ("up31", "decoder", 3),
+            ("up32", "decoder", 3),
+            ("up21", "decoder", 2),
+            ("up22", "decoder", 2),
+            ("up23", "decoder", 2),
+            ("up11", "decoder", 1),
+            ("up12", "decoder", 1),
+            ("up13", "decoder", 1),
+            ("up14", "decoder", 1),
+        ]
+
+        stages: List[Dict[str, Any]] = []
+        for name, group, stage in specs:
+            module = getattr(self, name, None)
+            if module is None:
+                continue
+            entry: Dict[str, Any] = {
+                "name": name,
+                "module": module.__class__.__name__,
+                "group": group,
+                "stage": stage,
+            }
+            block = getattr(module, "CB3d", None)
+            entry.update(self._describe_cb3d_block(block))
+            stages.append(entry)
+
+        params_total = sum(p.numel() for p in self.parameters())
+        params_trainable = sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+        return {
+            "vmamba_backend_available": bool(getattr(ZScan, "use_mamba", False)),
+            "params_total": int(params_total),
+            "params_trainable": int(params_trainable),
+            "stages": stages,
+        }
+
+    def _print_arch_summary(self) -> None:
+        summary = getattr(self, "arch_summary", {})
+        backend_msg = "available" if summary.get("vmamba_backend_available") else "missing"
+        print(f"[Arch] VMamba backend: {backend_msg}")
+        for entry in summary.get("stages", []):
+            impl = entry.get("impl")
+            backend = entry.get("backend")
+            msg = (
+                f"[Arch] {entry.get('group')} stage {entry.get('stage')} "
+                f"({entry.get('name')}): {impl}"
+            )
+            if backend:
+                msg += f" [{backend}]"
+            print(msg)
+
+    def save_arch_summary(self, output_folder: str) -> None:
+        if not getattr(self, "arch_summary", None):
+            return
+        path = os.path.join(output_folder, "arch_meta.json")
+        try:
+            os.makedirs(output_folder, exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(self.arch_summary, f, indent=2)
+        except Exception as exc:
+            print(f"[Arch] Failed to write {path}: {exc}")
 
 
 if __name__ == '__main__':

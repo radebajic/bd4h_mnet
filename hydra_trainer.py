@@ -1,4 +1,5 @@
 import os
+import importlib
 import hydra
 from omegaconf import DictConfig
 from nnunet.run.default_configuration import get_default_configuration
@@ -7,7 +8,7 @@ from nnunet.training.network_training.nnUNetTrainerCascadeFullRes import nnUNetT
 from nnunet.training.network_training.nnUNetTrainerV2_CascadeFullRes import nnUNetTrainerV2CascadeFullRes
 from nnunet.run.load_pretrained_weights import load_pretrained_weights
 
-from omegaconf import DictConfig, ListConfig
+from omegaconf import DictConfig, ListConfig, open_dict
 from collections.abc import Sequence
 
 def _extract_best_objective(trainer) -> float:
@@ -51,10 +52,45 @@ def _as_int_list(x):
         return [int(i) for i in list(x)]
     except Exception:
         raise TypeError(f"Cannot coerce to list[int]: {type(x)} -> {x}")
+def _safe_set(cfg, key, value):
+    if isinstance(cfg, DictConfig):
+        with open_dict(cfg):
+            cfg[key] = value
+    else:
+        cfg[key] = value
+
 
 @hydra.main(version_base=None, config_path="conf/training", config_name="quick")
 def train(cfg: DictConfig) -> float:
     tc = cfg.get("trainer", {})
+
+    vm_cfg = tc.get("vmamba", {}) or {}
+    vm_stage_keys = ("down_stages", "up_stages", "bottleneck_stages")
+    vm_flag_keys = ("preset", "in_down", "in_up", "in_bottleneck")
+    vm_stage_requested = any(len(_as_int_list(vm_cfg.get(k, []))) > 0 for k in vm_stage_keys)
+    vm_flags_requested = any(bool(vm_cfg.get(k)) for k in vm_flag_keys)
+    vm_requested = vm_stage_requested or vm_flags_requested
+
+    mamba_available = True
+    if vm_requested:
+        try:
+            importlib.import_module("mamba_ssm")
+        except ImportError:
+            mamba_available = False
+
+    if vm_requested and not mamba_available:
+        print("[WARNING] mamba-ssm not found; disabling VMamba stages and falling back to CB3d.")
+        for k in vm_stage_keys:
+            if k in vm_cfg:
+                _safe_set(vm_cfg, k, [])
+        for k in vm_flag_keys:
+            if k in vm_cfg:
+                _safe_set(vm_cfg, k, False)
+        _safe_set(vm_cfg, "backend_available", False)
+        _safe_set(tc, "vmamba", vm_cfg)
+    elif vm_requested:
+        _safe_set(vm_cfg, "backend_available", True)
+        _safe_set(tc, "vmamba", vm_cfg)
 
     # Mirrors: nnUNet_train <model> <trainer_name> <task> <fold> -p <plans_identifier>
     model = tc.get("model", "3d_fullres")
