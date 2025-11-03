@@ -124,7 +124,7 @@ class Down(BasicNet):
                  axial_vmamba: bool = False, axial_reduce: float = 0.5,):
         
         super().__init__()
-        axial_vmamba = axial_vmamba and ZScan.use_mamba  # gate here
+        use_vmamba = bool(axial_vmamba)
         self.mode_in, self.mode_out = mode
         self.downsample = downsample
         self.FMU = FMU
@@ -142,7 +142,7 @@ class Down(BasicNet):
                              norm_args=norm_args, activation_args=activation_args)
 
         if self.mode_out in ('3d', 'both'):
-            if axial_vmamba:
+            if use_vmamba:
                 self.CB3d = CBzMamba(in_channels=in_channels, out_channels=out_channels,
                                     reduce_ratio=axial_reduce,
                                     norm_kwargs=self.norm_kwargs, act_kwargs=self.activation_kwargs)
@@ -203,7 +203,7 @@ class Up(BasicNet):
                                   axial_vmamba: bool = False, axial_reduce: float = 0.5):
         
         super().__init__()
-        axial_vmamba = axial_vmamba and ZScan.use_mamba  # gate here
+        use_vmamba = bool(axial_vmamba)
         self.mode_in, self.mode_out = mode
         self.FMU = FMU
         self.cat_reduce = cat_reduce and (FMU == 'cat')
@@ -225,7 +225,7 @@ class Up(BasicNet):
                              norm_args=norm_args, activation_args=activation_args)
 
         if self.mode_out in ('3d', 'both'):
-            if axial_vmamba:
+            if use_vmamba:
                 self.CB3d = CBzMamba(in_channels=in_ch_for_cb, out_channels=out_channels,
                                     reduce_ratio=axial_reduce,
                                     norm_kwargs=self.norm_kwargs, act_kwargs=self.activation_kwargs)
