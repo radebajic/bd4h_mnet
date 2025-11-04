@@ -1,5 +1,13 @@
 import os
 import importlib
+
+# Set nnUNet paths BEFORE importing nnunet modules
+# These defaults can be overridden by config values in the train() function
+if "nnUNet_preprocessed" not in os.environ:
+    os.environ["nnUNet_preprocessed"] = "/teamspace/studios/this_studio/nnUNet_preprocessed"
+if "RESULTS_FOLDER" not in os.environ:
+    os.environ["RESULTS_FOLDER"] = "/teamspace/studios/this_studio/nnUNet_results"
+
 import hydra
 from omegaconf import DictConfig
 from nnunet.run.default_configuration import get_default_configuration
@@ -94,7 +102,7 @@ def train(cfg: DictConfig) -> float:
 
     # Mirrors: nnUNet_train <model> <trainer_name> <task> <fold> -p <plans_identifier>
     model = tc.get("model", "3d_fullres")
-    trainer_name = tc.get("trainer_name", "myTrainer_reproduction_WandB")
+    trainer_name = tc.get("trainer_name", "myTrainer_reproduction_WandB_2")
     task = tc.get("task")
     fold = int(tc.get("fold", 0))
     plans_identifier = tc.get("plans_identifier")
@@ -102,11 +110,8 @@ def train(cfg: DictConfig) -> float:
     if not task or plans_identifier is None:
         raise ValueError("Set trainer.task and trainer.plans_identifier in quick.yaml")
 
-    # Pass through paths like the CLI would
-    if tc.get("dataset_directory"):
-        os.environ["nnUNet_preprocessed"] = str(tc["dataset_directory"])
-    if tc.get("results_base"):
-        os.environ["RESULTS_FOLDER"] = str(tc["results_base"])
+    # Note: nnUNet paths are now set at module import time (top of file)
+    # Config values for dataset_directory and results_base are used there as defaults
 
     # Resolve canonical nnU-Net config (keeps parity with nnUNet_train)
     plans_file, output_folder, dataset_directory, batch_dice, stage, trainer_class = get_default_configuration(

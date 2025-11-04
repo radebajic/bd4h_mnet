@@ -192,6 +192,37 @@ done
 
 ---
 
+## VMamba reproduction variant
+
+We provide a VMamba-augmented mesh network and trainer under `nnunet/network_architecture/reproduction_mnet/`:
+
+- `mnet_vmamba.py` — drop-in hybrid that runs tri-plane SS2D scans (axial/coronal/sagittal) alongside MNet’s 2D/3D branches.
+- `vmamba_tri_plane.py` — reusable tri-plane selective-scan block with SE-style fusion.
+- `myTrainer_reproduction_WandB_2.py` — trainer wiring in the VMamba variant, with knobs for stage placement and gating.
+
+### Quick start
+
+```bash
+python hydra_trainer.py trainer.trainer_name=myTrainer_reproduction_WandB_2 \
+  trainer.vmamba.enabled=true \
+  trainer.vmamba.down_stages=[2,3] \
+  trainer.vmamba.up_stages=[2] \
+  trainer.vmamba.bottleneck_stages=[4] \
+  trainer.vmamba.hidden_ratio=0.25
+```
+
+Key VMamba options (all mirrored to the trainer attributes):
+
+- `enabled`: master on/off switch.
+- `down_stages`, `up_stages`, `bottleneck_stages`: stage indices (1–4 / 1–4 / 1–5) receiving the VMamba branch.
+- `hidden_ratio`: projection ratio inside the tri-plane scan (defaults to 0.5).
+- `dropout`, `fuse_mode` (`concat` | `sum`), `use_se` (channel SE-gate).
+- `targets`: optional list of specific block names (`down23`, `up12`, …) to force-enable.
+
+For smoke testing: `pytest tests/test_vmamba_vmnet.py` runs shape/budget checks on both the tri-plane block and the hybrid network.
+
+---
+
 ## 6) Validation & metrics
 
 ### 6.1 Preferred: trainer’s validation (needs **final** checkpoint)

@@ -1,5 +1,6 @@
-# best architecture training on 50 epochs
-# https://wandb.ai/xplstm/CSE6250_MNet_Reproduction/runs/o756id77/overview
+# Best architecture training on 50 epochs
+# Fixed for myTrainer_reproduction_WandB_2 with tri-plane VMamba
+# Original: https://wandb.ai/xplstm/CSE6250_MNet_Reproduction/runs/o756id77/overview
 
 hydra:
   job:
@@ -7,7 +8,7 @@ hydra:
     env_set:
       WANDB_ENTITY: "xplstm" 
       WANDB_PROJECT: "CSE6250_MNet_Reproduction" 
-      WANDB_GROUP: "mnet_arch_best_2_arch_50epochs"
+      WANDB_GROUP: "mnet_arch_best_triplane_50epochs"
 
 trainer:
   model: 3d_fullres
@@ -28,23 +29,22 @@ trainer:
   deterministic: false
   unpack_data: true
   max_epochs: 50
-  gated_fusion: spatial
-  width_mult: 1.0 
-  use_sep3d: false
-  use_checkpoint: false
-  cat_reduce: false
 
-  # VMamba 
+  # VMamba tri-plane configuration (best from sweep)
   vmamba:
     down_stages: [3]
     up_stages: [2]
     bottleneck_stages: [4,5]
-    axial_reduce: 0.5
+    hidden_ratio: 0.5      # Controls capacity of selective scan
+    dropout: 0.0           # No dropout
+    fuse_mode: concat      # Concatenate tri-plane features
+    use_se: true          # Use squeeze-excitation
+    se_reduction: 8       # SE reduction ratio
 
   # wandb controls
   wandb:
     enabled: true
     project: CSE6250_MNet_Reproduction
-    run_name: mnet_task24_fold0_bestArch3
-    group: mnet_arch_best_arch_3_50epochs
-    
+    run_name: mnet_task24_fold0_triplane_bestArch
+    group: mnet_arch_best_triplane_50epochs
+

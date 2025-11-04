@@ -1,4 +1,5 @@
 # Quick preset for testing + Optuna sweep
+# Fixed for myTrainer_reproduction_WandB_2 with tri-plane VMamba
 defaults:
   - override hydra/sweeper: optuna
   - override hydra/sweeper/sampler: grid
@@ -11,17 +12,16 @@ hydra:
       WANDB_ENTITY: "xplstm" 
       WANDB_PROJECT: "CSE6250_MNet_Reproduction" 
   sweeper:
-    study_name: mnet_arch_search_4
+    study_name: mnet_arch_search_triplane
     n_trials: 6
     params:
+      trainer.vmamba.bottleneck_stages: choice([3], [4], [5], [3,4], [4,5], [3,4,5])
       #trainer.vmamba.down_stages: choice([2], [3], [2,3], [3,4])
       #trainer.vmamba.up_stages: choice([2], [3], [2,3], [1,2])
-      trainer.vmamba.bottleneck_stages: choice([3], [4], [5], [3,4], [4,5], [3,4,5])
-      #trainer.vmamba.axial_reduce: choice(0.25, 0.5, 0.75, 1.0)
-      #trainer.gated_fusion: choice("none", "spatial")
-      #trainer.width_mult: choice(0.75, 1.0, 1.25)
-      #trainer.use_sep3d: choice(false, true)
-      #trainer.cat_reduce: choice(false, true)
+      # Optionally sweep VMamba hyperparams:
+      # trainer.vmamba.hidden_ratio: choice(0.25, 0.5, 0.75)
+      # trainer.vmamba.dropout: choice(0.0, 0.1)
+
 
 trainer:
   model: 3d_fullres
@@ -38,21 +38,21 @@ trainer:
   deterministic: false
   unpack_data: true
   max_epochs: 6
-  #gated_fusion: spatial
-  width_mult: 1.0
-  use_sep3d: false
-  use_checkpoint: false
-  cat_reduce: false
 
+  # VMamba tri-plane configuration
   vmamba:
     down_stages: []
     up_stages: []
     bottleneck_stages: []
-    axial_reduce: 0.5
+    hidden_ratio: 0.5      # Controls capacity of selective scan (was axial_reduce)
+    dropout: 0.0           # Dropout in VMamba blocks
+    fuse_mode: concat      # How to fuse tri-plane features: 'sum' or 'concat'
+    use_se: true          # Use squeeze-excitation attention
+    se_reduction: 8       # SE reduction ratio
 
   wandb:
     enabled: true
     project: CSE6250_MNet_Reproduction
-    run_name: mnet_task24_fold0_8e_2
-    group: mnet_arch_search_expanded_8e_bottleneck
-    
+    run_name: mnet_task24_fold0_triplane_sweep
+    group: mnet_arch_triplane_bottleneck
+
