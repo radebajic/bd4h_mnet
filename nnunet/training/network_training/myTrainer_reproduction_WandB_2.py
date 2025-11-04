@@ -493,6 +493,20 @@ class myTrainer_reproduction_WandB_2(nnUNetTrainer):
         self.optimizer.param_groups[0]['lr'] = poly_lr(ep, self.max_num_epochs, self.initial_lr, 0.9)
         self.print_to_log_file("lr:", np.round(self.optimizer.param_groups[0]['lr'], decimals=6))
 
+    def run_training(self):
+        """Run training and ensure clean exit."""
+        try:
+            ret = super().run_training()
+            return ret
+        finally:
+            # Cleanup WandB to allow instance to idle
+            if wandb is not None and self._wb_run is not None:
+                try:
+                    self._wb_run.finish()
+                    self._wb_run = None
+                except Exception:
+                    pass
+
     def on_epoch_end(self):
         """Called at the end of each epoch - logs metrics to WandB."""
         super().on_epoch_end()

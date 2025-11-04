@@ -1,0 +1,43 @@
+# Test config with VMamba DISABLED (pure MNet baseline)
+# For comparison with VMamba-enabled version
+
+hydra:
+  job:
+    chdir: false
+    env_set:
+      WANDB_ENTITY: "xplstm" 
+      WANDB_PROJECT: "CSE6250_MNet_Reproduction" 
+
+trainer:
+  model: 3d_fullres
+  trainer_name: myTrainer_reproduction_WandB_2
+  task: Task024_Promise
+  fold: 0
+  plans_identifier: nnUNetData_plans_v2.1_trgSp_z2p2_yx0p6125
+  save_npz: false
+
+  dataset_directory: /teamspace/studios/this_studio/nnUNet_preprocessed
+  results_base: /teamspace/studios/this_studio/nnUNet_results
+
+  fp16: true
+  deterministic: false
+  unpack_data: true
+  max_epochs: 6
+
+  # VMamba DISABLED - pure MNet baseline
+  vmamba:
+    down_stages: []            # ❌ No VMamba in encoder
+    up_stages: []              # ❌ No VMamba in decoder
+    bottleneck_stages: []      # ❌ No VMamba in bottlenecks
+    hidden_ratio: 0.5
+    dropout: 0.0
+    fuse_mode: concat
+    use_se: true
+    se_reduction: 8
+
+  wandb:
+    enabled: true
+    project: CSE6250_MNet_Reproduction
+    run_name: mnet_task24_fold0_pure_mnet
+    group: test_pure_mnet_baseline
+

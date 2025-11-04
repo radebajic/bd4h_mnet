@@ -1,0 +1,43 @@
+# Test config with VMamba ACTUALLY ENABLED
+# This enables tri-plane VMamba to verify it's different from pure MNet
+
+hydra:
+  job:
+    chdir: false
+    env_set:
+      WANDB_ENTITY: "xplstm" 
+      WANDB_PROJECT: "CSE6250_MNet_Reproduction" 
+
+trainer:
+  model: 3d_fullres
+  trainer_name: myTrainer_reproduction_WandB_2
+  task: Task024_Promise
+  fold: 0
+  plans_identifier: nnUNetData_plans_v2.1_trgSp_z2p2_yx0p6125
+  save_npz: false
+
+  dataset_directory: /teamspace/studios/this_studio/nnUNet_preprocessed
+  results_base: /teamspace/studios/this_studio/nnUNet_results
+
+  fp16: true
+  deterministic: false
+  unpack_data: true
+  max_epochs: 6
+
+  # VMamba tri-plane ENABLED at multiple scales
+  vmamba:
+    down_stages: [3]           # ✅ Enable in encoder stage 3
+    up_stages: [2]             # ✅ Enable in decoder stage 2
+    bottleneck_stages: [4, 5]  # ✅ Enable at deepest bottlenecks
+    hidden_ratio: 0.5          # Selective scan capacity
+    dropout: 0.0               # No dropout
+    fuse_mode: concat          # Concatenate tri-plane features
+    use_se: true              # Use squeeze-excitation
+    se_reduction: 8           # SE reduction ratio
+
+  wandb:
+    enabled: true
+    project: CSE6250_MNet_Reproduction
+    run_name: mnet_task24_fold0_triplane_ENABLED
+    group: test_triplane_enabled
+
