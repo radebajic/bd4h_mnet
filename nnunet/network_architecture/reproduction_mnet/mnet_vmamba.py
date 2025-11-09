@@ -65,18 +65,26 @@ class DownVM(BasicNet):
 
     @staticmethod
     def _make_fuse_layer(channels: int) -> nn.Sequential:
+        """Create gated fusion layer for better feature integration."""
         return nn.Sequential(
-            nn.Conv3d(channels * 2, channels, kernel_size=1, bias=False),
-            nn.InstanceNorm3d(channels, affine=True),
+            nn.Conv3d(channels * 2, channels * 2, kernel_size=1, bias=False),
+            nn.InstanceNorm3d(channels * 2, affine=True),
             nn.SiLU(inplace=True),
+            nn.Conv3d(channels * 2, channels, kernel_size=1, bias=True),
         )
 
     @staticmethod
     def _fuse(local: torch.Tensor, vm_feat: Optional[torch.Tensor], fuse_layer: Optional[nn.Module]) -> torch.Tensor:
+        """Gated fusion: learns to balance local and global features."""
         if vm_feat is None or fuse_layer is None:
             return local
-        fused = torch.cat([local, vm_feat], dim=1)
-        return fuse_layer(fused) + local
+        
+        # Compute gating signal
+        combined = torch.cat([local, vm_feat], dim=1)
+        gate = torch.sigmoid(fuse_layer(combined))
+        
+        # Gated combination with residual
+        return gate * vm_feat + (1 - gate) * local
 
     def forward(self, x):
         if self.downsample:
@@ -154,19 +162,26 @@ class UpVM(BasicNet):
 
     @staticmethod
     def _make_fuse_layer(channels: int) -> nn.Sequential:
+        """Create gated fusion layer for better feature integration."""
         return nn.Sequential(
-            nn.Conv3d(channels * 2, channels, kernel_size=1, bias=False),
-            nn.InstanceNorm3d(channels, affine=True),
+            nn.Conv3d(channels * 2, channels * 2, kernel_size=1, bias=False),
+            nn.InstanceNorm3d(channels * 2, affine=True),
             nn.SiLU(inplace=True),
+            nn.Conv3d(channels * 2, channels, kernel_size=1, bias=True),
         )
 
     @staticmethod
     def _fuse(local: torch.Tensor, vm_feat: Optional[torch.Tensor], proj: Optional[nn.Module], fuse_layer: Optional[nn.Module]) -> torch.Tensor:
+        """Gated fusion: learns to balance local and global features."""
         if vm_feat is None or proj is None or fuse_layer is None:
             return local
+        
         vm_proj = proj(vm_feat)
-        fused = torch.cat([local, vm_proj], dim=1)
-        return fuse_layer(fused) + local
+        combined = torch.cat([local, vm_proj], dim=1)
+        gate = torch.sigmoid(fuse_layer(combined))
+        
+        # Gated combination with residual
+        return gate * vm_proj + (1 - gate) * local
 
     def forward(self, x):
         x2d, xskip2d, x3d, xskip3d = x
@@ -224,11 +239,12 @@ class MNetVMamba(SegmentationNetwork):
 
         self.vmamba_cfg = vmamba_cfg or {}
         self.vm_kwargs = {
-            'hidden_ratio': self.vmamba_cfg.get('hidden_ratio', self.vmamba_cfg.get('axial_reduce', 0.5)),
-            'dropout': self.vmamba_cfg.get('dropout', 0.0),
+            'hidden_ratio': self.vmamba_cfg.get('hidden_ratio', self.vmamba_cfg.get('axial_reduce', 1.0)),  # Increased from 0.5
+            'dropout': self.vmamba_cfg.get('dropout', 0.1),  # Added dropout for regularization
             'fuse_mode': self.vmamba_cfg.get('fuse_mode', 'concat'),
             'use_se': self.vmamba_cfg.get('use_se', True),
             'se_reduction': self.vmamba_cfg.get('se_reduction', 8),
+            'd_state': self.vmamba_cfg.get('d_state', 16),  # SSM state dimension
         }
 
         vm_down = {int(v) for v in self.vmamba_cfg.get('down_stages', [])}

@@ -1,0 +1,68 @@
+# Minimal VMamba - Actually fits in memory
+# Only VMamba in the most critical bottleneck stage
+
+hydra:
+  job:
+    chdir: false
+    env_set:
+      WANDB_ENTITY: "xplstm" 
+      WANDB_PROJECT: "CSE6250_MNet_Reproduction" 
+      WANDB_GROUP: "mnet_arch_minimal_vmamba"
+
+trainer:
+  model: 3d_fullres
+  trainer_name: myTrainer_reproduction_WandB_2
+  task: Task024_Promise
+  fold: 0
+  plans_identifier: nnUNetData_plans_v2.1_trgSp_z2p2_yx0p6125
+  save_npz: true
+  validation_only: false
+  valbest: false
+
+  # paths
+  dataset_directory: /teamspace/studios/this_studio/nnUNet_preprocessed
+  results_base: /teamspace/studios/this_studio/nnUNet_results
+
+  # training knobs - MAXIMUM MEMORY SAVINGS
+  fp16: true
+  deterministic: false
+  unpack_data: true
+  max_epochs: 50
+  gated_fusion: spatial
+  width_mult: 1.0 
+  use_sep3d: false
+  use_checkpoint: true       # Gradient checkpointing
+  cat_reduce: false
+  
+  batch_size: 1              # MUST be 1 for memory
+
+  # MINIMAL VMamba - Only deepest bottleneck
+  vmamba:
+    enabled: true
+    
+    # ONLY the single deepest bottleneck (smallest spatial dims)
+    down_stages: []          # No VMamba in downsampling
+    up_stages: []            # No VMamba in upsampling  
+    bottleneck_stages: [5]   # ONLY bottleneck5 (smallest resolution)
+    
+    # Minimal capacity
+    hidden_ratio: 0.5        # Minimal (same as original)
+    d_state: 8               # Reduced from 16
+    
+    # Regularization
+    dropout: 0.1
+    
+    # Architecture details
+    fuse_mode: concat
+    use_se: true
+    se_reduction: 8
+    backend_available: true
+
+  # wandb controls
+  wandb:
+    enabled: true
+    project: CSE6250_MNet_Reproduction
+    run_name: mnet_task24_fold0_minimal_vmamba
+    group: mnet_arch_minimal_vmamba
+
+

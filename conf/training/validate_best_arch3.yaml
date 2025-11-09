@@ -1,6 +1,6 @@
 # Validate using the best checkpoint from a previous run
 defaults:
-  - best_arch_3.yaml
+  - best_arch_3_fixed.yaml
   - _self_
 
 trainer:

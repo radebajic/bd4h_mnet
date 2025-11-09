@@ -1,0 +1,67 @@
+# Improved VMamba architecture with better defaults
+# Key improvements:
+# 1. Higher hidden_ratio (1.0 instead of 0.5) for more capacity
+# 2. VMamba in more stages (broader coverage)
+# 3. Increased d_state for richer state representations
+# 4. Added dropout for regularization
+
+hydra:
+  job:
+    chdir: false
+    env_set:
+      WANDB_ENTITY: "xplstm" 
+      WANDB_PROJECT: "CSE6250_MNet_Reproduction" 
+      WANDB_GROUP: "mnet_arch_improved_vmamba_50epochs"
+
+trainer:
+  model: 3d_fullres
+  trainer_name: myTrainer_reproduction_WandB_2
+  task: Task024_Promise
+  fold: 0
+  plans_identifier: nnUNetData_plans_v2.1_trgSp_z2p2_yx0p6125
+  save_npz: true
+  validation_only: false
+  valbest: false
+
+  # paths
+  dataset_directory: /teamspace/studios/this_studio/nnUNet_preprocessed
+  results_base: /teamspace/studios/this_studio/nnUNet_results
+
+  # training knobs
+  fp16: true
+  deterministic: false
+  unpack_data: true
+  max_epochs: 50
+  gated_fusion: spatial
+  width_mult: 1.0 
+  use_sep3d: false
+  use_checkpoint: false
+  cat_reduce: false
+
+  # Improved VMamba configuration
+  vmamba:
+    enabled: true
+    # Broader stage coverage for better global context
+    down_stages: [1, 2, 3]  # More downsampling stages
+    up_stages: [1, 2, 3]     # More upsampling stages  
+    bottleneck_stages: [2, 3, 4, 5]  # More bottleneck stages
+    
+    # Increased capacity
+    hidden_ratio: 1.0  # Up from 0.5 for more capacity
+    d_state: 16        # SSM state dimension
+    
+    # Regularization
+    dropout: 0.1       # Prevent overfitting
+    
+    # Architecture details
+    fuse_mode: concat  # Concatenate multi-directional features
+    use_se: true       # Use squeeze-excitation for channel attention
+    se_reduction: 8
+
+  # wandb controls
+  wandb:
+    enabled: true
+    project: CSE6250_MNet_Reproduction
+    run_name: mnet_task24_fold0_improved_vmamba
+    group: mnet_arch_improved_vmamba_50epochs
+

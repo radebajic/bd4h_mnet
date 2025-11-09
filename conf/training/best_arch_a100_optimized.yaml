@@ -1,0 +1,78 @@
+# Optimized for A100 80GB - Maximum Performance
+# Targets 60-70GB VRAM usage and 85%+ GPU utilization
+
+hydra:
+  job:
+    chdir: false
+    env_set:
+      WANDB_ENTITY: "xplstm" 
+      WANDB_PROJECT: "CSE6250_MNet_Reproduction" 
+      WANDB_GROUP: "mnet_arch_a100_optimized"
+
+trainer:
+  model: 3d_fullres
+  trainer_name: myTrainer_reproduction_WandB_2
+  task: Task024_Promise
+  fold: 0
+  plans_identifier: nnUNetData_plans_v2.1_trgSp_z2p2_yx0p6125
+  save_npz: true
+  validation_only: false
+  valbest: false
+
+  # paths
+  dataset_directory: /teamspace/studios/this_studio/nnUNet_preprocessed
+  results_base: /teamspace/studios/this_studio/nnUNet_results
+
+  # A100 80GB OPTIMIZED SETTINGS
+  fp16: true
+  deterministic: false
+  unpack_data: true
+  max_epochs: 50
+  
+  # INCREASED BATCH SIZE - utilize that 80GB!
+  batch_size: 4              # 4x larger than before
+  
+  # NO gradient checkpointing - you have the memory
+  use_checkpoint: false
+  
+  # AGGRESSIVE DATA LOADING - fix the bottleneck
+  num_threads: 32            # More CPU threads
+  num_cached_per_thread: 4   # More caching per thread
+  pin_memory: true           # Faster CPU->GPU transfer
+  
+  # Architecture settings
+  gated_fusion: spatial
+  width_mult: 1.0 
+  use_sep3d: false
+  cat_reduce: false
+
+  # FULL IMPROVED VMAMBA - You have the memory!
+  vmamba:
+    enabled: true
+    backend_available: true
+    
+    # More stages - we have 80GB!
+    down_stages: [2, 3]        # Core downsampling stages
+    up_stages: [1, 2, 3]       # More decoder stages
+    bottleneck_stages: [3, 4, 5]  # Multiple bottlenecks
+    
+    # Full capacity
+    hidden_ratio: 1.0          # Full hidden dimension
+    d_state: 16                # Full state dimension
+    dropout: 0.1               # Regularization
+    
+    # Architecture details
+    fuse_mode: concat
+    use_se: true
+    se_reduction: 8
+    
+    # A100-specific: larger chunks (set in code)
+    # See vmamba_tri_plane_a100.py
+
+  # wandb controls
+  wandb:
+    enabled: true
+    project: CSE6250_MNet_Reproduction
+    run_name: mnet_task24_fold0_a100_optimized
+    group: mnet_arch_a100_optimized
+

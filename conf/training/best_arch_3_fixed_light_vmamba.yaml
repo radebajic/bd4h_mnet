@@ -1,0 +1,66 @@
+# Light VMamba - 2-3 stages (better than minimal, should still fit)
+# VMamba in deepest stages where spatial dims are small
+
+hydra:
+  job:
+    chdir: false
+    env_set:
+      WANDB_ENTITY: "xplstm" 
+      WANDB_PROJECT: "CSE6250_MNet_Reproduction" 
+      WANDB_GROUP: "mnet_arch_light_vmamba"
+
+trainer:
+  model: 3d_fullres
+  trainer_name: myTrainer_reproduction_WandB_2
+  task: Task024_Promise
+  fold: 0
+  plans_identifier: nnUNetData_plans_v2.1_trgSp_z2p2_yx0p6125
+  save_npz: true
+  validation_only: false
+  valbest: false
+
+  # paths
+  dataset_directory: /teamspace/studios/this_studio/nnUNet_preprocessed
+  results_base: /teamspace/studios/this_studio/nnUNet_results
+
+  # training knobs
+  fp16: true
+  deterministic: false
+  unpack_data: true
+  max_epochs: 50
+  gated_fusion: spatial
+  width_mult: 1.0 
+  use_sep3d: false
+  use_checkpoint: true       # Gradient checkpointing for memory
+  cat_reduce: false
+  
+  batch_size: 1              # Required for memory
+
+  # LIGHT VMamba - 2-3 deepest stages only
+  vmamba:
+    enabled: true
+    backend_available: true
+    
+    # Deepest stages only (smallest spatial dimensions)
+    down_stages: []          # Skip down stages (too high-res)
+    up_stages: []            # Skip most up stages  
+    bottleneck_stages: [4, 5]  # Two deepest bottlenecks
+    
+    # Light capacity
+    hidden_ratio: 0.5
+    d_state: 8
+    dropout: 0.1
+    
+    # Architecture
+    fuse_mode: concat
+    use_se: true
+    se_reduction: 8
+
+  # wandb controls
+  wandb:
+    enabled: true
+    project: CSE6250_MNet_Reproduction
+    run_name: mnet_task24_fold0_light_vmamba
+    group: mnet_arch_light_vmamba
+
+

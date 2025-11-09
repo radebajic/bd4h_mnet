@@ -1,0 +1,68 @@
+# Memory-efficient improved VMamba configuration
+# Reduces memory usage while keeping most improvements
+
+hydra:
+  job:
+    chdir: false
+    env_set:
+      WANDB_ENTITY: "xplstm" 
+      WANDB_PROJECT: "CSE6250_MNet_Reproduction" 
+      WANDB_GROUP: "mnet_arch_improved_vmamba_lowmem"
+
+trainer:
+  model: 3d_fullres
+  trainer_name: myTrainer_reproduction_WandB_2
+  task: Task024_Promise
+  fold: 0
+  plans_identifier: nnUNetData_plans_v2.1_trgSp_z2p2_yx0p6125
+  save_npz: true
+  validation_only: false
+  valbest: false
+
+  # paths
+  dataset_directory: /teamspace/studios/this_studio/nnUNet_preprocessed
+  results_base: /teamspace/studios/this_studio/nnUNet_results
+
+  # training knobs - MEMORY OPTIMIZED
+  fp16: true
+  deterministic: false
+  unpack_data: true
+  max_epochs: 50
+  gated_fusion: spatial
+  width_mult: 1.0 
+  use_sep3d: false
+  use_checkpoint: true       # 🔧 Gradient checkpointing for memory
+  cat_reduce: false
+  
+  batch_size: 1              # 🔧 Reduced from 2 for memory
+
+  # Improved VMamba configuration (memory-efficient)
+  vmamba:
+    enabled: true
+    
+    # Moderate stage coverage (memory efficient)
+    down_stages: [2, 3]      # Core stages only
+    up_stages: [2]           # Most important decoder stage
+    bottleneck_stages: [4, 5]  # Deepest bottlenecks
+    
+    # Moderate capacity (balance memory vs performance)
+    hidden_ratio: 0.75       # 🔧 Reduced from 1.0
+    d_state: 12              # 🔧 Reduced from 16
+    
+    # Regularization
+    dropout: 0.1
+    
+    # Architecture details
+    fuse_mode: concat
+    use_se: true
+    se_reduction: 8
+    backend_available: true
+
+  # wandb controls
+  wandb:
+    enabled: true
+    project: CSE6250_MNet_Reproduction
+    run_name: mnet_task24_fold0_improved_vmamba_lowmem
+    group: mnet_arch_improved_vmamba_lowmem
+
+

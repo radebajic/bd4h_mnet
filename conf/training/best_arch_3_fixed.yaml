@@ -29,17 +29,22 @@ trainer:
   deterministic: false
   unpack_data: true
   max_epochs: 50
+  batch_size: 1              # Memory constraint
+  use_checkpoint: false      # Baseline doesn't need it
 
-  # VMamba tri-plane configuration (best from sweep)
+  # VMamba - DISABLED (improved version OOMs on 22GB GPU)
+  # Use training=best_arch_3_fixed_minimal_vmamba for minimal VMamba
   vmamba:
-    down_stages: [3]
-    up_stages: [2]
-    bottleneck_stages: [4,5]
-    hidden_ratio: 0.5      # Controls capacity of selective scan
-    dropout: 0.0           # No dropout
-    fuse_mode: concat      # Concatenate tri-plane features
-    use_se: true          # Use squeeze-excitation
-    se_reduction: 8       # SE reduction ratio
+    enabled: false
+    # Original settings (kept for reference):
+    # down_stages: [3]
+    # up_stages: [2]
+    # bottleneck_stages: [4,5]
+    # hidden_ratio: 0.5
+    # dropout: 0.0
+    # fuse_mode: concat
+    # use_se: true
+    # se_reduction: 8
 
   # wandb controls
   wandb:
