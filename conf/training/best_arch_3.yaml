@@ -7,11 +7,11 @@ hydra:
     env_set:
       WANDB_ENTITY: "xplstm" 
       WANDB_PROJECT: "CSE6250_MNet_Reproduction" 
-      WANDB_GROUP: "mnet_arch_best_2_arch_50epochs"
+      WANDB_GROUP: "mnet_arch_best_3_arch_150epochs"
 
 trainer:
   model: 3d_fullres
-  trainer_name: myTrainer_reproduction_WandB_2
+  trainer_name: myTrainer_reproduction_WandB
   task: Task024_Promise
   fold: 0
   plans_identifier: nnUNetData_plans_v2.1_trgSp_z2p2_yx0p6125
@@ -28,7 +28,7 @@ trainer:
   deterministic: false
   unpack_data: true
   max_epochs: 150
-  gated_fusion: spatial
+  gated_fusion: null
   width_mult: 1.0 
   use_sep3d: false
   use_checkpoint: false
@@ -45,6 +45,6 @@ trainer:
   wandb:
     enabled: true
     project: CSE6250_MNet_Reproduction
-    run_name: mnet_task24_fold0_bestArch3
-    group: mnet_arch_best_arch_3_50epochs
+    run_name: mnet_task24_fold0_bestArch3_150epochs
+    group: mnet_arch_best_arch_3_150epochs
     
