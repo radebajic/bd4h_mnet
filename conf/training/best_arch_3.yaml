@@ -27,7 +27,7 @@ trainer:
   fp16: true
   deterministic: false
   unpack_data: true
-  max_epochs: 50
+  max_epochs: 150
   gated_fusion: spatial
   width_mult: 1.0 
   use_sep3d: false

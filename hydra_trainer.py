@@ -102,7 +102,7 @@ def train(cfg: DictConfig) -> float:
 
     # Mirrors: nnUNet_train <model> <trainer_name> <task> <fold> -p <plans_identifier>
     model = tc.get("model", "3d_fullres")
-    trainer_name = tc.get("trainer_name", "myTrainer_reproduction_WandB_2")
+    trainer_name = tc.get("trainer_name", "myTrainer_reproduction_WandB")
     task = tc.get("task")
     fold = int(tc.get("fold", 0))
     plans_identifier = tc.get("plans_identifier")
