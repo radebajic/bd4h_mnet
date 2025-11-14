@@ -81,7 +81,10 @@ class myTrainer_reproduction_WandB(nnUNetTrainer):
         self.vm_down_stages = []
         self.vm_up_stages = []
         self.vm_bottleneck_stages = []
-        self.axial_reduce = 0.5
+        self.axial_reduce = 0.75  # Updated default to match new implementation
+        self.axial_bidirectional = True  # NEW: Enable bidirectional scanning by default
+        self.axial_use_residual = True   # NEW: Enable residual connections by default
+        self.axial_fusion_mode = "dual"  # NEW: Fusion mode: "simple", "channel", "spatial", or "dual"
         
         # W&B defaults (Hydra can override these attributes after construction)
         self.wandb_enabled: bool = False
@@ -119,6 +122,9 @@ class myTrainer_reproduction_WandB(nnUNetTrainer):
             "arch/vmamba/up_stages": list(getattr(self, "vm_up_stages", [])),
             "arch/vmamba/bottleneck_stages": list(getattr(self, "vm_bottleneck_stages", [])),
             "arch/vmamba/axial_reduce": getattr(self, "axial_reduce", None),
+            "arch/vmamba/axial_bidirectional": getattr(self, "axial_bidirectional", None),
+            "arch/vmamba/axial_use_residual": getattr(self, "axial_use_residual", None),
+            "arch/vmamba/axial_fusion_mode": getattr(self, "axial_fusion_mode", None),
         }
         # parameter counts
         total_params: Optional[int] = None
@@ -194,7 +200,7 @@ class myTrainer_reproduction_WandB(nnUNetTrainer):
 
         baseline_net = None
         try:
-            axial_reduce = getattr(self, "axial_reduce", 0.5)
+            axial_reduce = getattr(self, "axial_reduce", 0.75)
             with torch.no_grad():
                 buffer = io.StringIO()
                 with contextlib.redirect_stdout(buffer):
@@ -213,6 +219,9 @@ class myTrainer_reproduction_WandB(nnUNetTrainer):
                         vm_up_stages=[],
                         vm_bottleneck_stages=[],
                         axial_reduce=axial_reduce,
+                        axial_bidirectional=getattr(self, "axial_bidirectional", True),
+                        axial_use_residual=getattr(self, "axial_use_residual", True),
+                        axial_fusion_mode=getattr(self, "axial_fusion_mode", "dual"),
                     )
                 params = sum(p.numel() for p in baseline_net.parameters())
             self._baseline_param_count = params
@@ -363,7 +372,10 @@ class myTrainer_reproduction_WandB(nnUNetTrainer):
             vm_down_stages=getattr(self, "vm_down_stages", []),
             vm_up_stages=getattr(self, "vm_up_stages", []),
             vm_bottleneck_stages=getattr(self, "vm_bottleneck_stages", []),
-            axial_reduce=getattr(self, "axial_reduce", 0.5),
+            axial_reduce=getattr(self, "axial_reduce", 0.75),
+            axial_bidirectional=getattr(self, "axial_bidirectional", True),  # NEW
+            axial_use_residual=getattr(self, "axial_use_residual", True),    # NEW
+            axial_fusion_mode=getattr(self, "axial_fusion_mode", "dual"),    # NEW
         )
         if torch.cuda.is_available():
             self.network.cuda()
@@ -609,18 +621,15 @@ class myTrainer_reproduction_WandB(nnUNetTrainer):
         try:
             if wandb is not None and self._wb_run is not None:
                 wandb.log(logs)  # do not pass `step`; W&B uses define_metric step_metric
-        except Exception:
-            pass
+                self.print_to_log_file(f"[W&B] Logged epoch {self.epoch} to WandB")
+        except Exception as e:
+            self.print_to_log_file(f"[W&B] Failed to log epoch {self.epoch}: {e}")
 
         continue_training = self.epoch < self.max_num_epochs
+        self.print_to_log_file(f"[W&B] Epoch {self.epoch}, continue_training={continue_training}, max_epochs={self.max_num_epochs}")
 
-        if not continue_training:
-            try:
-                if self._wb_run is not None:
-                    self._wb_run.finish()
-            except Exception:
-                pass
-            self._wb_run = None
+        # Don't finish wandb here - let on_train_end() handle it
+        # This ensures all epochs are logged before finishing
 
         if self.epoch == 100 and self.all_val_eval_metrics[-1] == 0:
             self.optimizer.param_groups[0]["momentum"] = 0.95
@@ -631,6 +640,39 @@ class myTrainer_reproduction_WandB(nnUNetTrainer):
     # finalize (idempotent)
     def on_train_end(self):
         super().on_train_end()
+        
+        # Ensure the last epoch is logged
+        # After the training loop, self.epoch is decremented by 1 by the parent class
+        # So if we trained 5 epochs (0-4), self.epoch will be 4 after super().on_train_end()
+        try:
+            if wandb is not None and self._wb_run is not None:
+                # Count how many epochs were actually trained
+                num_trained = len(self.all_tr_losses) if hasattr(self, "all_tr_losses") else 0
+                self.print_to_log_file(f"[W&B] Training ended. Epochs trained: {num_trained}, max_num_epochs: {self.max_num_epochs}, current epoch: {self.epoch}")
+                
+                # If we trained the full number of epochs, ensure the last one is logged
+                # The last epoch number should be max_num_epochs - 1 (0-indexed)
+                if num_trained == self.max_num_epochs and num_trained > 0:
+                    final_epoch = self.max_num_epochs - 1
+                    self.print_to_log_file(f"[W&B] Ensuring final epoch {final_epoch} is logged")
+                    final_logs = {
+                        "epoch": int(final_epoch),
+                    }
+                    if len(self.all_tr_losses) > 0:
+                        final_logs["loss/train"] = float(self.all_tr_losses[-1])
+                    if hasattr(self, "all_val_losses") and len(self.all_val_losses) > 0:
+                        final_logs["loss/val"] = float(self.all_val_losses[-1])
+                    if hasattr(self, "all_val_eval_metrics") and len(self.all_val_eval_metrics) > 0:
+                        last = self.all_val_eval_metrics[-1]
+                        if isinstance(last, (int, float)):
+                            final_logs["dice/mean"] = float(last)
+                        elif isinstance(last, dict) and 'mean' in last:
+                            final_logs["dice/mean"] = float(last['mean'])
+                    wandb.log(final_logs)
+                    self.print_to_log_file(f"[W&B] Final epoch {final_epoch} logged to WandB")
+        except Exception as e:
+            self.print_to_log_file(f"W&B final epoch log failed: {e}")
+        
         run = getattr(self, "_wb_run", None)
         self._wb_run = None           # prevent double-finish (atexit/signal)
         try:

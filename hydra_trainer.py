@@ -185,6 +185,25 @@ def train(cfg: DictConfig) -> float:
     _validate_stage_range("bottleneck_stages", trainer.vm_bottleneck_stages, 1, 5)
     if hasattr(trainer, "axial_reduce"):
         trainer.axial_reduce = float(vm.get("axial_reduce", getattr(trainer, "axial_reduce", 0.5)))  # type: ignore[attr-defined]
+    
+    # Z-axis Mamba bidirectional and residual parameters
+    if hasattr(trainer, "axial_bidirectional"):
+        trainer.axial_bidirectional = bool(vm.get("axial_bidirectional", getattr(trainer, "axial_bidirectional", True)))  # type: ignore[attr-defined]
+    if hasattr(trainer, "axial_use_residual"):
+        trainer.axial_use_residual = bool(vm.get("axial_use_residual", getattr(trainer, "axial_use_residual", True)))  # type: ignore[attr-defined]
+    if hasattr(trainer, "axial_fusion_mode"):
+        fusion_mode = vm.get("axial_fusion_mode", getattr(trainer, "axial_fusion_mode", "dual"))
+        # Validate fusion mode
+        if fusion_mode not in ("simple", "channel", "spatial", "dual"):
+            raise ValueError(f"axial_fusion_mode must be one of: 'simple', 'channel', 'spatial', 'dual'. Got: {fusion_mode}")
+        trainer.axial_fusion_mode = str(fusion_mode)  # type: ignore[attr-defined]
+
+    # Full3D VMamba parameters (only for Full3D trainer, no-op for others)
+    full3d_vmamba_params = ("vmamba_hidden_ratio", "vmamba_d_state", "vmamba_dropout", 
+                            "vmamba_use_se", "vmamba_se_reduction")
+    for param in full3d_vmamba_params:
+        if param in vm and hasattr(trainer, param):
+            setattr(trainer, param, vm.get(param))
 
     # WandB toggles (consumed by your custom trainer)
     wb = tc.get("wandb", {})
@@ -204,7 +223,11 @@ def train(cfg: DictConfig) -> float:
       up = getattr(trainer, "vm_up_stages", None)
       bottleneck = getattr(trainer, "vm_bottleneck_stages", None)
       print(f"[DEBUG] VMamba down={down} up={up} bn={bottleneck} "
-          f"gf={getattr(trainer,'gated_fusion', None)} width_mult={getattr(trainer,'width_mult', None)}")
+          f"gf={getattr(trainer,'gated_fusion', None)} width_mult={getattr(trainer,'width_mult', None)} "
+          f"axial_reduce={getattr(trainer,'axial_reduce', None)} "
+          f"bidirectional={getattr(trainer,'axial_bidirectional', None)} "
+          f"residual={getattr(trainer,'axial_use_residual', None)} "
+          f"fusion_mode={getattr(trainer,'axial_fusion_mode', None)}")
     except Exception:
         pass
 

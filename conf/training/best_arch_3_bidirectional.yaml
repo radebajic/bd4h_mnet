@@ -1,0 +1,59 @@
+# best architecture training with bidirectional Z-axis Mamba - FOLD 0
+# Based on best_arch_3_fold0.yaml with enhanced bidirectional scanning
+# Uses improved CBzMamba with bidirectional scanning and residual connections
+
+hydra:
+  job:
+    chdir: false
+    env_set:
+      WANDB_ENTITY: "xplstm" 
+      WANDB_PROJECT: "CSE6250_MNet_Reproduction" 
+      WANDB_GROUP: "mnet_arch_best_3_bidirectional_150epochs"
+
+trainer:
+  model: 3d_fullres
+  trainer_name: myTrainer_reproduction_WandB
+  task: Task024_Promise
+  fold: 0
+  plans_identifier: nnUNetData_plans_v2.1_trgSp_z2p2_yx0p6125
+  save_npz: true
+  validation_only: false
+  valbest: false
+
+  # paths
+  dataset_directory: /teamspace/studios/this_studio/nnUNet_preprocessed
+  results_base: /teamspace/studios/this_studio/nnUNet_results
+
+  # training knobs
+  fp16: true
+  deterministic: false
+  unpack_data: true
+  max_epochs: 5
+  gated_fusion: null
+  width_mult: 1.0 
+  use_sep3d: false
+  use_checkpoint: false
+  cat_reduce: false
+
+  # VMamba with bidirectional Z-axis scanning and spatial/channel attention
+  vmamba:
+    # Stage selection (same as best_arch_3_fold0.yaml)
+    down_stages: []
+    up_stages: []
+    bottleneck_stages: [4, 5]
+    
+    # Z-axis Mamba parameters
+    axial_reduce: 1             # Increased from 0.5 for better performance
+    axial_bidirectional: true       # Enable bidirectional scanning (forward + backward)
+    axial_use_residual: true        # Enable residual connections in CBzMamba
+    axial_fusion_mode: dual         # Fusion mode: "simple", "channel", "spatial", or "dual" (default: "dual")
+
+  # wandb controls
+  wandb:
+    enabled: true
+    project: CSE6250_MNet_Reproduction
+    run_name: mnet_task24_fold0_bestArch3_bidirectional_5epochs_f0
+    group: mnet_arch_best_arch_3_bidirectional_5epochs
+    
+
+

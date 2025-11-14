@@ -17,7 +17,7 @@ from nnunet.experiment_planning.experiment_planner_baseline_3DUNet_v21 import Ex
 from nnunet.paths import *
 
 
-class ExperimentPlanner3D_v21_trgSp_z2p2_yx0p6125(ExperimentPlanner3D_v21):
+class ExperimentPlanner3D_v21_trgSp_z1p0_yx0p9121(ExperimentPlanner3D_v21):
     def __init__(self, folder_with_cropped_data, preprocessed_output_folder):
         super(ExperimentPlanner3D_v21, self).__init__(folder_with_cropped_data, preprocessed_output_folder)
         # we change the data identifier and plans_fname. This will make this experiment planner save the preprocessed

@@ -352,25 +352,47 @@ class SelectiveScan3D(nn.Module):
         x = self.proj_in(x)
         B, C, D, H, W = x.shape
         
-        # Define 8 3D scanning directions (all cube corners)
-        directions = []
-        for flip_d in [False, True]:
-            for flip_h in [False, True]:
-                for flip_w in [False, True]:
-                    x_dir = x
-                    if flip_d:
-                        x_dir = torch.flip(x_dir, dims=[2])
-                    if flip_h:
-                        x_dir = torch.flip(x_dir, dims=[3])
-                    if flip_w:
-                        x_dir = torch.flip(x_dir, dims=[4])
-                    directions.append((x_dir, flip_d, flip_h, flip_w))
+        # MEMORY-EFFICIENT: Process directions sequentially to avoid 8× memory spike
+        # Trade-off: Slightly slower but won't OOM on limited GPU memory
+        direction_configs = [
+            (flip_d, flip_h, flip_w)
+            for flip_d in [False, True]
+            for flip_h in [False, True]
+            for flip_w in [False, True]
+        ]
         
         outputs = []
-        for i, (x_dir, flip_d, flip_h, flip_w) in enumerate(directions):
-            y_dir = self.scan_direction(x_dir, i)
+        for dir_idx, (flip_d, flip_h, flip_w) in enumerate(direction_configs):
+            # Flip for this direction
+            x_dir = x
+            if flip_d:
+                x_dir = torch.flip(x_dir, dims=[2])
+            if flip_h:
+                x_dir = torch.flip(x_dir, dims=[3])
+            if flip_w:
+                x_dir = torch.flip(x_dir, dims=[4])
             
-            # Reverse transformations
+            # Flatten for scanning
+            x_dir_flat = x_dir.flatten(2).transpose(1, 2)  # (B, L, C)
+            
+            # Get data-dependent parameters
+            params = self.x_proj[dir_idx](x_dir)
+            params_flat = params.flatten(2).transpose(1, 2)
+            
+            B_ssm, C_ssm, delta = params_flat.split([self.d_state, self.d_state, C], dim=-1)
+            delta = F.softplus(delta)
+            
+            # Get SSM matrices for this direction
+            A = -torch.exp(self.A_log[dir_idx])
+            D_param = self.D[dir_idx]
+            
+            # Perform selective scan
+            y_dir_flat = selective_scan_1d(x_dir_flat, delta, A, B_ssm, C_ssm, D_param, chunk_size=256)
+            
+            # Reshape back to spatial
+            y_dir = y_dir_flat.transpose(1, 2).view(B, C, D, H, W)
+            
+            # Unflip
             if flip_w:
                 y_dir = torch.flip(y_dir, dims=[4])
             if flip_h:
