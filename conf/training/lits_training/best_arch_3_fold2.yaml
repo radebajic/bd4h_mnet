@@ -7,7 +7,7 @@ hydra:
     env_set:
       WANDB_ENTITY: "xplstm" 
       WANDB_PROJECT: "CSE6250_MNet_Reproduction" 
-      WANDB_GROUP: "mnet_arch_best_3_arch_150epochs"
+      WANDB_GROUP: "mnet_arch_best_3_arch_150epochs_lits"
 
 trainer:
   model: 3d_fullres
@@ -36,9 +36,9 @@ trainer:
 
   # VMamba 
   vmamba:
-    down_stages: [3]
-    up_stages: [2]
-    bottleneck_stages: [4,5]
+    down_stages: []
+    up_stages: []
+    bottleneck_stages: [3, 4, 5]
     axial_reduce: 0.5
 
   # wandb controls

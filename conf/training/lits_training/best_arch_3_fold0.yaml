@@ -36,9 +36,9 @@ trainer:
 
   # VMamba 
   vmamba:
-    down_stages: [3]
-    up_stages: [2]
-    bottleneck_stages: [4,5]
+    down_stages: []
+    up_stages: []
+    bottleneck_stages: [3, 4, 5]
     axial_reduce: 0.5
 
   # wandb controls
