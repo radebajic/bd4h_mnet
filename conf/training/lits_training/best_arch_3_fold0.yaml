@@ -1,0 +1,51 @@
+# best architecture training on 150 epochs - FOLD 0
+# https://wandb.ai/xplstm/CSE6250_MNet_Reproduction/runs/o756id77/overview
+
+hydra:
+  job:
+    chdir: false
+    env_set:
+      WANDB_ENTITY: "xplstm" 
+      WANDB_PROJECT: "CSE6250_MNet_Reproduction" 
+      WANDB_GROUP: "mnet_arch_best_3_arch_150epochs_lits"
+
+trainer:
+  model: 3d_fullres
+  trainer_name: myTrainer_reproduction_WandB
+  task: Task029_LITS
+  fold: 0
+  plans_identifier: nnUNetData_plans_v2.1_trgSp_z1p0_yx0p9121
+  save_npz: true
+  validation_only: false
+  valbest: false
+
+  # paths
+  dataset_directory: /teamspace/studios/this_studio/nnUNet_preprocessed
+  results_base: /teamspace/studios/this_studio/nnUNet_results
+
+  # training knobs
+  fp16: true
+  deterministic: false
+  unpack_data: true
+  max_epochs: 150
+  gated_fusion: null
+  width_mult: 1.0 
+  use_sep3d: false
+  use_checkpoint: false
+  cat_reduce: false
+
+  # VMamba 
+  vmamba:
+    down_stages: [3]
+    up_stages: [2]
+    bottleneck_stages: [4,5]
+    axial_reduce: 0.5
+
+  # wandb controls
+  wandb:
+    enabled: true
+    project: CSE6250_MNet_Reproduction
+    run_name: mnet_task29_lits_fold0_bestArch3_150epochs_f0
+    group: mnet_arch_best_arch_3_150epochs_lits
+    
+

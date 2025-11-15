@@ -191,3 +191,6 @@ print('✓ Optimization working!')
 **Bottom line:** The optimization eliminates Python loop overhead and maximizes GPU parallelism where possible, while respecting the fundamental sequential nature of SSMs. This provides significant speedup without requiring hardware changes or algorithm modifications.
 
 
+
+
+
