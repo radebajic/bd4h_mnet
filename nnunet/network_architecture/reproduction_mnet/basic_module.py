@@ -240,34 +240,22 @@ class ZScanBidirectional(nn.Module):
                  fusion_mode: Literal["simple", "channel", "spatial", "dual"] = "dual"):
         super().__init__()
         self.use_mamba = False
-        forward_block: Optional[nn.Module] = None
-        backward_block: Optional[nn.Module] = None
+        shared_block: Optional[nn.Module] = None
         fallback_reason: Optional[str] = None
 
         if Mamba1D is not None:
-            forward_block = ZScan._try_init_mamba(channels)
-            if forward_block is not None:
-                backward_block = ZScan._try_init_mamba(channels)
-                if backward_block is not None:
-                    self.use_mamba = True
-                else:
-                    fallback_reason = "failed to initialize backward Mamba1D"
+            shared_block = ZScan._try_init_mamba(channels)
+            if shared_block is not None:
+                self.use_mamba = True
             else:
-                fallback_reason = "failed to initialize forward Mamba1D"
+                fallback_reason = "failed to initialize Mamba1D"
         else:
             fallback_reason = "mamba-ssm backend unavailable"
 
         if not self.use_mamba:
-            # Build bidirectional conv fallback
+            # Build conv fallback (single shared block)
             pad = k_fallback // 2
-            forward_block = nn.Conv3d(
-                channels, channels,
-                kernel_size=(k_fallback, 1, 1),
-                padding=(pad, 0, 0),
-                groups=channels,
-                bias=False,
-            )
-            backward_block = nn.Conv3d(
+            shared_block = nn.Conv3d(
                 channels, channels,
                 kernel_size=(k_fallback, 1, 1),
                 padding=(pad, 0, 0),
@@ -284,8 +272,7 @@ class ZScanBidirectional(nn.Module):
                 )
                 _MAMBA_BIDIRECTIONAL_FALLBACK_WARNED = True
 
-        self.forward_block = forward_block
-        self.backward_block = backward_block
+        self.shared_block = shared_block
         
         # Fusion mechanism: simple scalar, channel attention, spatial attention, or dual
         self.fusion_mode = fusion_mode
@@ -325,21 +312,21 @@ class ZScanBidirectional(nn.Module):
         if self.use_mamba:
             x_perm = x.permute(0, 3, 4, 2, 1).contiguous()    # (N,H,W,D,C)
             seq = x_perm.view(N * H * W, D, C)                # (B*, L=D, C)
-            forward_seq = self.forward_block(seq)             # (B*, L, C)
+            forward_seq = self.shared_block(seq)              # (B*, L, C)
             forward_out = forward_seq.view(N, H, W, D, C).permute(0, 4, 3, 1, 2).contiguous()
         else:
-            forward_out = self.forward_block(x)
+            forward_out = self.shared_block(x)
 
-        # Backward direction: D-1 → 0
+        # Backward direction: D-1 → 0 (using same shared block)
         x_backward = torch.flip(x, dims=[2])  # Flip along D dimension
         if self.use_mamba:
             x_perm = x_backward.permute(0, 3, 4, 2, 1).contiguous()
             seq = x_perm.view(N * H * W, D, C)
-            backward_seq = self.backward_block(seq)
+            backward_seq = self.shared_block(seq)             # Same block as forward
             backward_out = backward_seq.view(N, H, W, D, C).permute(0, 4, 3, 1, 2).contiguous()
             backward_out = torch.flip(backward_out, dims=[2])  # Flip back to original order
         else:
-            backward_out = torch.flip(self.backward_block(x_backward), dims=[2])
+            backward_out = torch.flip(self.shared_block(x_backward), dims=[2])
 
         # Enhanced fusion with attention mechanisms
         if self.fusion_mode == "simple":
@@ -356,10 +343,10 @@ class ZScanBidirectional(nn.Module):
             fused = g * forward_out + (1.0 - g) * backward_out
         else:  # dual
             # Dual attention: combine channel and spatial
-            gc = self.channel_gate(forward_out, backward_out)  # (N,C,1,1,1)
-            gs = self.spatial_gate(forward_out, backward_out)  # (N,1,D,H,W)
-            # Combine both attention types (broadcast addition)
-            g = torch.sigmoid(0.5 * gc + 0.5 * gs)
+            gc = self.channel_gate(forward_out, backward_out)  # (N,C,1,1,1) - already sigmoid'd
+            gs = self.spatial_gate(forward_out, backward_out)  # (N,1,D,H,W) - already sigmoid'd
+            # Average both attention types (both already passed through sigmoid)
+            g = 0.5 * gc + 0.5 * gs
             fused = g * forward_out + (1.0 - g) * backward_out
 
         return fused
@@ -391,6 +378,13 @@ class CBzMamba(nn.Module):
         # Use bidirectional if requested, otherwise unidirectional
         if bidirectional:
             self.zssm = ZScanBidirectional(mid, fusion_mode=fusion_mode)
+            if not self.zssm.use_mamba:
+                warnings.warn(
+                    f"CBzMamba: ZScanBidirectional is using conv fallback (not Mamba). "
+                    f"Performance may be degraded. Check mamba-ssm installation.",
+                    RuntimeWarning,
+                    stacklevel=2
+                )
         else:
             self.zssm = ZScan(mid)
         

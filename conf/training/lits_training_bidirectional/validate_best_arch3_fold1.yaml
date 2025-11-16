@@ -1,0 +1,21 @@
+# Validate fold 1 using the best checkpoint (bidirectional)
+defaults:
+  - best_arch_3_fold1.yaml
+  - _self_
+
+trainer:
+  # override training-specific toggles for validation
+  validation_only: true
+  valbest: true
+  save_npz: false
+  disable_validation_inference: false   # keep inference+Dice logging
+  disable_postprocessing_on_folds: false  # enable postprocessing
+
+  wandb:
+    enabled: true
+    project: CSE6250_MNet_Reproduction
+    run_name: mnet_task29_lits_fold1_validation_bidirectional
+    group: mnet_arch_validation_lits_bidirectional
+
+
+
