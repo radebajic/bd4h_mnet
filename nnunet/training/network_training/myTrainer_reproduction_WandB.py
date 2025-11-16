@@ -82,9 +82,9 @@ class myTrainer_reproduction_WandB(nnUNetTrainer):
         self.vm_up_stages = []
         self.vm_bottleneck_stages = []
         self.axial_reduce = 0.75  # Updated default to match new implementation
-        self.axial_bidirectional = True  # NEW: Enable bidirectional scanning by default
-        self.axial_use_residual = True   # NEW: Enable residual connections by default
-        self.axial_fusion_mode = "dual"  # NEW: Fusion mode: "simple", "channel", "spatial", or "dual"
+        self.axial_bidirectional = False  # NEW: Disable bidirectional scanning by default
+        self.axial_use_residual = False   # NEW: Disable residual connections by default
+        self.axial_fusion_mode = "simple"  # NEW: Fusion mode: "simple", "channel", "spatial", or "dual"
         
         # W&B defaults (Hydra can override these attributes after construction)
         self.wandb_enabled: bool = False

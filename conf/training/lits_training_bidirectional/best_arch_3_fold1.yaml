@@ -41,6 +41,9 @@ trainer:
     up_stages: []
     bottleneck_stages: [3, 4, 5]
     axial_reduce: 0.5
+    axial_bidirectional: true
+    axial_use_residual: true
+    axial_fusion_mode: "dual"
 
   # wandb controls
   wandb:

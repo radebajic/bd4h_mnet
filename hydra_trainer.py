@@ -188,11 +188,11 @@ def train(cfg: DictConfig) -> float:
     
     # Z-axis Mamba bidirectional and residual parameters
     if hasattr(trainer, "axial_bidirectional"):
-        trainer.axial_bidirectional = bool(vm.get("axial_bidirectional", getattr(trainer, "axial_bidirectional", True)))  # type: ignore[attr-defined]
+        trainer.axial_bidirectional = bool(vm.get("axial_bidirectional", getattr(trainer, "axial_bidirectional", False)))  # type: ignore[attr-defined]
     if hasattr(trainer, "axial_use_residual"):
-        trainer.axial_use_residual = bool(vm.get("axial_use_residual", getattr(trainer, "axial_use_residual", True)))  # type: ignore[attr-defined]
+        trainer.axial_use_residual = bool(vm.get("axial_use_residual", getattr(trainer, "axial_use_residual", False)))  # type: ignore[attr-defined]
     if hasattr(trainer, "axial_fusion_mode"):
-        fusion_mode = vm.get("axial_fusion_mode", getattr(trainer, "axial_fusion_mode", "dual"))
+        fusion_mode = vm.get("axial_fusion_mode", getattr(trainer, "axial_fusion_mode", "simple"))
         # Validate fusion mode
         if fusion_mode not in ("simple", "channel", "spatial", "dual"):
             raise ValueError(f"axial_fusion_mode must be one of: 'simple', 'channel', 'spatial', 'dual'. Got: {fusion_mode}")
