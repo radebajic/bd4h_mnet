@@ -1,0 +1,39 @@
+hydra:
+  job:
+    chdir: false
+    env_set:
+      WANDB_ENTITY: xplstm
+      WANDB_PROJECT: CSE6250_MNet_LiTS_Sweep
+      WANDB_GROUP: lits_sg_z2p2
+trainer:
+  model: 3d_fullres
+  trainer_name: myTrainer_reproduction_WandB
+  task: Task029_LITS
+  fold: 0
+  plans_identifier: nnUNetData_plans_v2.1_trgSp_z2p2_yx0p9121_sg
+  save_npz: true
+  validation_only: false
+  valbest: false
+  dataset_directory: /teamspace/studios/this_studio/nnUNet_preprocessed
+  results_base: /teamspace/studios/this_studio/nnUNet_results
+  fp16: true
+  deterministic: false
+  unpack_data: true
+  max_epochs: 50
+  gated_fusion: spatial
+  width_mult: 1.0
+  use_sep3d: false
+  use_checkpoint: false
+  cat_reduce: false
+  batch_size: 4
+  num_threads: 16
+  vmamba:
+    down_stages: []
+    up_stages: []
+    bottleneck_stages: []
+    axial_reduce: 0.5
+  wandb:
+    enabled: true
+    project: CSE6250_MNet_LiTS_Sweep
+    run_name: lits_sg_z2p2_fold0
+    group: lits_sg_z2p2
